@@ -28,7 +28,7 @@
 (def ^{:private true
        :doc "Map of aggregators used to convert the aggregator keyword to
        a string"}
-  aggregators
+  aggregators->str
   {:count "COUNT"
    :sum   "SUM"
    :avg   "AVG"
@@ -85,13 +85,20 @@
   original column. Always apply the column alias."
   [ta ca c]
   (if (coll? c)
-    (if (coll? (first c))
-      (if (= 1 (count (first c)))
-        {:string (str (ffirst c) " AS " (name (last c)))
-         :alias {(last c) (first c)}})
-      (let [pcolumn (:string (prefix-column ta ca (first c)))]
-        {:string (str pcolumn " AS " (name (last c)))
-         :alias {(last c) (keyword pcolumn)}}))
+    (if (and ca (ca c))
+      {:string (ca c)}
+      (if (coll? (first c))
+        (if (= 1 (count (first c)))
+          {:string (str (ffirst c) " AS " (name (last c)))
+           :alias {(last c) (ffirst c)}}
+          (let [[f a] (first c)
+                f (if (keyword? f) (or (f aggregators->str) (name f)) f)
+                a (if (keyword? a) (if (= a :*) "*" (:string (prefix-column ta ca a))) (name a))]
+            {:string (str f "(" a ")" " AS " (name (last c)))
+             :alias {(first c) (str f "(" a ")")}}))
+        (let [pcolumn (:string (prefix-column ta ca (first c)))]
+          {:string (str pcolumn " AS " (name (last c)))
+           :alias {(last c) (keyword pcolumn)}})))
 
     (let [ra (c ca)
           default-table (if (= 1 (count ta)) (key (first ta)))
@@ -143,7 +150,7 @@
   "Given a form, returns a string ? if the form isn't a collection or a
   keyword."
   [f]
-  (if (or (coll? f) (keyword? f))
+  (if (or (coll? f) (keyword? f) (and (string? f) (= (first f) \!)))
     f
     "?"))
 
@@ -156,7 +163,8 @@
 (defn- arguments
   "Given an expression returns a lazy seq of all arguments"
   [ex]
-  (remove keyword? (flatten ex)))
+  (remove #(if (and (string? %) (= (first %) \!)) true)
+          (remove keyword? (flatten ex))))
 
 (defn- gen-arguments
   [ex]
@@ -171,7 +179,7 @@
 
 (defn- add-columns*
   [ta ca f]
-  (if (keyword? f)
+  (if (or (keyword? f) (and (vector? f) (= 2 (count f))))
     (:string (prefix-column ta ca f))
     f))
 
@@ -179,7 +187,17 @@
   "Given an alias map and an expression returns a expression with column
   strings replacing column keywords."
   [ta ca ex]
-  (walk/postwalk (partial add-columns* ta ca) ex))
+  (walk/prewalk (partial add-columns* ta ca) ex))
+
+(defn- remove-literal-mark*
+  [f]
+  (if (and (string? f) (= (first f) \!))
+    (str/replace-first f #"^!" "")
+    f))
+
+(defn- remove-literal-mark
+  [ex]
+  (walk/postwalk remove-literal-mark* ex))
 
 (defn- fix-in-vector*
   "We need the vector following \"IN\" comma separated."
@@ -191,8 +209,8 @@
     f))
 
 (defn- fix-in-vector
-  [e]
-  (walk/postwalk fix-in-vector* e))
+  [ex]
+  (walk/postwalk fix-in-vector* ex))
 
 (defn- parentesis*
   [f]
@@ -201,8 +219,8 @@
     f))
 
 (defn- parentesis
-  [e]
-  (walk/postwalk parentesis* e))
+  [ex]
+  (walk/postwalk parentesis* ex))
 
 (defn- add-space*
   [f]
@@ -211,8 +229,8 @@
     f))
 
 (defn- add-space
-  [e]
-  (walk/postwalk add-space* e))
+  [ex]
+  (walk/postwalk add-space* ex))
 
 (defn- exp-gen
   "Given a expression, a alias map and the expression type, returns the
@@ -222,6 +240,7 @@
                      pre-process-exp
                      sanitize
                      add-operators
+                     remove-literal-mark
                      fix-in-vector
                      (add-columns ta ca)
                      parentesis
@@ -276,21 +295,42 @@
     (conj ex w)
     ex))
 
+(defn add-group-by
+  [ex gb ta]
+  (if gb
+    (conj ex (str "GROUP BY " (:string (prefix-list-columns gb ta))))
+    ex))
+
+(defn modifier
+  [m]
+  (cond
+   (nil? m) m
+   (coll? m) (if (integer? (second m))
+               (str " " (name (first m)) " " (second m))
+               (apply str (map modifier m)))
+   :else (str " " (name m))))
+
 (defn sql-select
   "Given a select command map, returns a select query vector."
   [cm]
    (let [pt (process-tables (:table cm))
          pc (prefix-list-columns (:columns cm) (:alias pt))
-         qv [(-> ["SELECT"
+         qv [(-> [(str "SELECT"
+                  (modifier (:modifier cm)))
                   (:string pc)
                   "FROM"
                   (:string pt)]
                  (add-expression (:where cm) (:alias pt) (:alias pc) :where)
+                 (add-group-by (:group-by cm) (:alias pt))
                  (add-expression (:having cm) (:alias pt) (:alias pc) :having)
+                 ;orderby
+                 ;limit
+                 ;offset
                  add-space
                  flatten
                  str/join)]]
-      (if-let [arguments (gen-arguments (:where cm))]
+      (if-let [arguments (concat (gen-arguments (:where cm))
+                                 (gen-arguments (:having cm)))]
         (vec (concat qv arguments))
         qv)))
 
@@ -309,22 +349,20 @@
 
     (throw (IllegalArgumentException. "Incorrect :command value format."))))
 
-(def sql (partial sql-gen :h2))
-
 (defn select
   "Given an entity returns a select query for the entity."
   [e]
   {:command :select
    :modifier nil
    :target e
-   :where [:and [:in :username ["mynomoto" "m" "myn"]] [:like :roles "%us%"] [:or [:< :id 1000] [:> :id 0]]]
+   :where nil
    :group-by nil
    :having nil
    :offset nil
    :limit nil})
 
-(defn query [db q]
-  (jdbc/query db (sql q)))
+(defn query [db cm]
+  (jdbc/query db (sql-gen :h2 cm)))
 
 (defmulti auto
   "Given a db and a options map returns a column vector."

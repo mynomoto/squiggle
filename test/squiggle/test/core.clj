@@ -2,10 +2,6 @@
   (:use clojure.test
         squiggle.core))
 
-(def db {:classname   "org.h2.Driver"
-         :subprotocol "h2"
-         :subname     "resources/db/squiggle.db"})
-
 (def ent {:table :user
           :default-select nil
           :pk nil
@@ -23,20 +19,20 @@
           :temp false
           :temporary false}})
 
-(def sql-h2 (partial sql-gen :h2))
+(def sql (partial sql-gen :h2))
 
 (deftest test-create-table
   (testing "default"
-    (is (= (sql-h2 ct)
+    (is (= (sql ct)
            ["CREATE TABLE user IF NOT EXISTS (id identity PRIMARY KEY)"])))
   (testing "without :if-not-exists"
-    (is (= (sql-h2 (assoc-in ct [:opts :if-not-exists] false))
+    (is (= (sql (assoc-in ct [:opts :if-not-exists] false))
            ["CREATE TABLE user (id identity PRIMARY KEY)"])))
   (testing "with :temp"
-    (is (= (sql-h2 (assoc-in ct [:opts :temp] true))
+    (is (= (sql (assoc-in ct [:opts :temp] true))
            ["CREATE TABLE TEMPORARY user IF NOT EXISTS (id identity PRIMARY KEY)"])))
   (testing "with :temporary"
-    (is (= (sql-h2 (assoc-in ct [:opts :temporary] true))
+    (is (= (sql (assoc-in ct [:opts :temporary] true))
            ["CREATE TABLE TEMPORARY user IF NOT EXISTS (id identity PRIMARY KEY)"]))))
 
 (def dt
@@ -48,20 +44,20 @@
 
 (deftest test-drop-table
   (testing "default"
-    (is (= (sql-h2 dt)
+    (is (= (sql dt)
            ["DROP TABLE IF EXISTS user"])))
   (testing "without :if-exists"
-    (is (= (sql-h2 (assoc-in dt [:opts :if-exists] false))
+    (is (= (sql (assoc-in dt [:opts :if-exists] false))
            ["DROP TABLE user"])))
   (testing "with :cascade"
-    (is (= (sql-h2 (assoc-in dt [:opts :cascade] true)))
+    (is (= (sql (assoc-in dt [:opts :cascade] true)))
            ["DROP TABLE IF EXISTS user CASCADE"]))
   (testing "with :restrict"
-    (is (= (sql-h2 (assoc-in dt [:opts :restrict] true))
+    (is (= (sql (assoc-in dt [:opts :restrict] true))
            ["DROP TABLE IF EXISTS user RESTRICT"])))
   (testing "with :restrict and :cascade"
     (is (thrown? IllegalArgumentException
-                 (sql-h2 (assoc dt :opts {:restrict true :cascade true}))))))
+                 (sql (assoc dt :opts {:restrict true :cascade true}))))))
 
 (def sl
   {:command :select
@@ -69,51 +65,70 @@
 
 (deftest test-select-query
   (testing "default"
-    (is (= (sql-h2 sl)
+    (is (= (sql sl)
            ["SELECT user.* FROM user"])))
 
   (testing "with table alias"
-    (is (= (sql-h2 (assoc sl :table [[:user :u]]))
+    (is (= (sql (assoc sl :table [[:user :u]]))
            ["SELECT u.* FROM user AS u"])))
 
   (testing "with one column"
-    (is (= (sql-h2 (assoc sl :columns [:username]))
+    (is (= (sql (assoc sl :columns [:username]))
            ["SELECT user.username FROM user"])))
 
+  (testing "with one column and a modifier"
+    (is (= (sql (assoc sl :columns [:username]
+                          :modifier :distinct))
+           ["SELECT distinct user.username FROM user"])))
+
+  (testing "with one column and a modifier"
+    (is (= (sql (assoc sl :columns [:username]
+                          :modifier [:top 10]))
+           ["SELECT top 10 user.username FROM user"])))
+
+  (testing "with one column and modifiers"
+    (is (= (sql (assoc sl :columns [:username]
+                          :modifier [:distinct [:top 10]]))
+           ["SELECT distinct top 10 user.username FROM user"])))
+
   (testing "with columns"
-    (is (= (sql-h2 (assoc sl :columns [:username :role]))
+    (is (= (sql (assoc sl :columns [:username :role]))
            ["SELECT user.username, user.role FROM user"])))
 
   (testing "with functions as columns"
-    (is (= (sql-h2 (assoc sl :columns [[["count(*)"] :count]]))
+    (is (= (sql (assoc sl :columns [[["count(*)"] :count]]))
            ["SELECT count(*) AS count FROM user"])))
 
+  (testing "with functions keywords as columns"
+    (is (= (sql (assoc sl :columns [[[:count :*] :count]]))
+           ["SELECT COUNT(*) AS count FROM user"])))
+
   (testing "with one column alias"
-    (is (= (sql-h2 (assoc sl :columns [[:username :login]]))
+    (is (= (sql (assoc sl :columns [[:username :login]]))
            ["SELECT user.username AS login FROM user"])))
 
   (testing "with columns aliases"
-    (is (= (sql-h2 (assoc sl :columns [[:username :login] [:role :perfil]]))
+    (is (= (sql (assoc sl :columns [[:username :login] [:role :perfil]]))
            ["SELECT user.username AS login, user.role AS perfil FROM user"])))
 
   (testing "with table alias and columns"
-    (is (= (sql-h2 (assoc sl :table [[:user :u]] :columns [:username :role]))
+    (is (= (sql (assoc sl :table [[:user :u]] :columns [:username :role]))
            ["SELECT u.username, u.role FROM user AS u"])))
 
   (testing "with table and columns aliases"
-    (is (= (sql-h2 (assoc sl :table [[:user :u]]
+    (is (= (sql (assoc sl :table [[:user :u]]
                           :columns [[:username :login] [:role :perfil]]))
            ["SELECT u.username AS login, u.role AS perfil FROM user AS u"])))
 
   (testing "with several tables and columns"
-    (is (= (sql-h2 (assoc sl :table [[:user :u] [:email :e] :address]
+    (is (= (sql (assoc sl :table [[:user :u] [:email :e] :address]
                           :columns [:user.username :user.role
                                     :email.title :address.zip]))
            [(str "SELECT u.username, u.role, e.title, address.zip "
                  "FROM user AS u, email AS e, address")])))
 
   (testing "with several tables and columns with alias"
-    (is (= (sql-h2 (assoc sl :table [[:user :u] [:email :e] :address]
+    (is (= (sql (assoc sl :table [[:user :u] [:email :e] :address]
                           :columns [[:user.username :login] :user.role
                                     :email.title [:address.zip :code]]))
            [(str "SELECT u.username AS login, u.role, e.title, "
@@ -121,13 +136,13 @@
                  "FROM user AS u, email AS e, address")])))
 
   (testing "with a simple where clause"
-    (is (= (sql-h2 (assoc sl :where [:and [:= :username "user"]]))
+    (is (= (sql (assoc sl :where [:and [:= :username "user"]]))
            [(str "SELECT user.* FROM user "
                  "WHERE user.username = ?")
             "user"])))
 
   (testing "with a simple where clause and aliases"
-    (is (= (sql-h2 (assoc sl :where [:and [:= :username "user"]]
+    (is (= (sql (assoc sl :where [:and [:= :username "user"]]
                           :table [[:user :u]]
                           :columns [[:username :login]]))
            [(str "SELECT u.username AS login FROM user AS u "
@@ -135,7 +150,7 @@
             "user"])))
 
   (testing "replaces column alias with columns in a where clause"
-    (is (= (sql-h2 (assoc sl :where [:and [:= :login "user"]]
+    (is (= (sql (assoc sl :where [:and [:= :login "user"]]
                           :table [[:user :u]]
                           :columns [[:username :login]]))
            [(str "SELECT u.username AS login FROM user AS u "
@@ -143,14 +158,32 @@
             "user"])))
 
   (testing "with a complex where clause"
-    (is (= (sql-h2 (assoc sl :where [:and [:in :username ["user" "u" "admin"]]
+    (is (= (sql (assoc sl :where [:and [:in :username ["user" "u" "admin"]]
                                        [:like :roles "%us%"]
                                        [:or [:< :id 1000]
                                             [:> :id 0]]]))
            [(str "SELECT user.* FROM user "
                  "WHERE user.username IN ( ? ,  ? ,  ? ) AND "
                  "user.roles LIKE ? AND ( user.id < ? OR user.id > ? )")
-            "user" "u" "admin" "%us%" 1000 0]))))
+            "user" "u" "admin" "%us%" 1000 0])))
+
+  (testing "with a group by clause and an aggregator"
+    (is (= (sql (assoc sl :columns [[[:count :*] :count]]
+                          :group-by [:role]))
+           ["SELECT COUNT(*) AS count FROM user GROUP BY user.role"])))
+
+  (testing "with a group by clause, an aggregator and a having clause"
+    (is (= (sql (assoc sl :columns [[[:count :*] :count]]
+                          :having [:> [:count :*] 2]
+                          :group-by [:role]))
+           ["SELECT COUNT(*) AS count FROM user GROUP BY user.role HAVING COUNT(*) > ?" 2])))
+
+  (testing "with a group by clause, an aggregator and a having clause literal"
+    (is (= (sql (assoc sl :columns [[[:count :*] :count]]
+                          :having [:> "!count(*)" 2]
+                          :group-by [:role]))
+           ["SELECT COUNT(*) AS count FROM user GROUP BY user.role HAVING count(*) > ?" 2])))
+  )
 
 {:command :select
  :table :user
