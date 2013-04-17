@@ -7,33 +7,36 @@
        :doc "Map of operators used to convert the operator keyword to a
        string."}
   operators->str
-  {:=       "="
-   :>       ">"
-   :>=      ">="
-   :<       "<"
-   :<=      "<="
-   :!=      "!="
-   :<>      "<>"
-   :not=    "!="
-   :like    "LIKE"
-   :in      "IN"
-   :not-in  "NOT IN"
-   :between "BETWEEN"
-   :and     "AND"
-   :or      "OR"})
+  {:=        "="
+   :>        ">"
+   :>=       ">="
+   :<        "<"
+   :<=       "<="
+   :!=       "!="
+   :<>       "<>"
+   :not=     "!="
+   :like     "LIKE"
+   :in       "IN"
+   :not-in   "NOT IN"
+   :between  "BETWEEN"
+   :not      "NOT"
+   :is-null  "IS NULL"
+   :not-null "NULL"
+   :and      "AND"
+   :or       "OR"})
 
 (def ^{:private true
        :doc "Map of aggregators used to convert the aggregator keyword to
        a string"}
   aggregators
   {:count "COUNT"
-   :sum "SUM"
-   :avg "AVG"
+   :sum   "SUM"
+   :avg   "AVG"
    :stdev "STDEV"
-   :min "MIN"
-   :max "MAX"
+   :min   "MIN"
+   :max   "MAX"
    :first "FIRST"
-   :last "LAST"})
+   :last  "LAST"})
 
 (def ^{:private true
        :doc "Set of infix operators used verify if a keyword is a infix
@@ -49,11 +52,6 @@
    :unique      "UNIQUE"
    :null        "NULL"
    :not-null    "NOT NULL"})
-
-(defn- table-name
-  "Given a entity return the table name string"
-  [e]
-  (name (:table e)))
 
 (defn- table-alias
   [t]
@@ -81,23 +79,27 @@
     (keyword? opt) (opt create-table-options)
     :else          (throw (IllegalArgumentException. "Incorrect option format."))))
 
-(defn- prefix-columns
+(defn- prefix-column
+  "Given a table alias map and a column return a string of prefixed column."
+  [am c]
+  (let [default-table (if (= 1 (count am)) (key (first am)))
+        [cn tn & r] (reverse (str/split (name c) #"\."))
+        tn (or tn (if default-table (name default-table)))]
+    (str
+      (if r (str (str/join "." (reverse r)) "."))
+      (if (or ((keyword tn) am)
+                tn)
+        (str (name (or ((keyword tn) am)
+                tn)) "."))
+      cn)))
+
+(defn- prefix-list-columns
   "Given columns and a process table map return a string of prefixed columns."
-  [cs m]
+  [cs am]
   (let [cs (or cs
-              [:*])
-        alias (:alias m)
-        default-table (if (= 1 (count alias)) (key (first alias)))]
+              [:*])]
     (str/join ", "
-                (for [c cs
-                      :let [[cn tn & r] (reverse (str/split (name c) #"\."))
-                            tn (or tn (name default-table))]]
-                  (str (str/join "." (reverse r))
-                       (name
-                       (or ((keyword tn) (:alias m))
-                           tn))
-                       "."
-                       cn)))))
+              (map (partial prefix-column am) cs))))
 
 (defn- pre-process-exp*
   "Given a form, return a pre-processed form in the correct order for
@@ -145,8 +147,8 @@
 
 (defn- gen-arguments
   [ex]
-  (when-let [e (seq (arguments (pre-process-exp ex)))]
-    e))
+  (when-let [a (seq (arguments (pre-process-exp ex)))]
+    a))
 
 (defn- add-operators
   "Given an expression returns a expression with operator strings replacing
@@ -154,20 +156,17 @@
   [ex]
   (walk/postwalk-replace operators->str ex))
 
-(defn- add-columns* [q f]
+(defn- add-columns*
+  [m f]
   (if (keyword? f)
-    (let [cn (name f)
-          s (set cn)]
-      (if (s \.)
-        cn
-       (str (table-name q) "." cn)))
+    (prefix-column m f)
     f))
 
 (defn- add-columns
-  "Given an expression returns a expression with column strings replacing
-  column keywords."
-  [q ex]
-  (walk/postwalk (partial add-columns* q) ex))
+  "Given an alias map and an expression returns a expression with column
+  strings replacing column keywords."
+  [m ex]
+  (walk/postwalk (partial add-columns* m) ex))
 
 (defn- fix-in-vector*
   "We need the vector following \"IN\" comma separated."
@@ -202,19 +201,25 @@
   [e]
   (walk/postwalk add-space* e))
 
-(defn- where-gen
-  "Given a query return the processed where clause."
-  [q]
-  (some->> (:where q)
-           pre-process-exp
-           sanitize
-           add-operators
-           fix-in-vector
-           (add-columns q)
-           parentesis
-           add-space
-           flatten
-           (apply str "WHERE ")))
+(defn- exp-gen
+  "Given a expression, a alias map and the expression type, returns the
+  string for the expression."
+  [e m type]
+  (let [exp (some->> e
+                     pre-process-exp
+                     sanitize
+                     add-operators
+                     fix-in-vector
+                     (add-columns m)
+                     parentesis
+                     add-space
+                     flatten)]
+    (cond
+     (nil? exp) nil
+     (= type :where) (apply str "WHERE " exp)
+     (= type :having) (apply str "HAVING " exp)
+     :else (throw (IllegalArgumentException.
+                   "Only accepts type :where or :having.")))))
 
 (defn sql-drop
   "Given an entity generate a command to drop the entity table."
@@ -250,12 +255,24 @@
         (ct-columns c)
         ")")])
 
+(defn add-expression
+  "Given an select expression, a where or having expression and an alias
+  map, returns the select expression with the where/having expression."
+  [ex we m ty]
+  (if-let [w (exp-gen we m ty)]
+    (conj ex w)
+    ex))
+
 (defn sql-select
   "Given a select command map, returns a select query vector."
   [cm]
    (let [pt (process-tables (:table cm))
-         qv [(-> ["SELECT" (prefix-columns (:columns cm) pt) ["FROM"] (:string pt)]
-                 ((fn [x] (if (where-gen cm) (conj x (where-gen cm)) x)))
+         qv [(-> ["SELECT"
+                  (prefix-list-columns (:columns cm) (:alias pt))
+                  "FROM"
+                  (:string pt)]
+                 (add-expression (:where cm) (:alias pt) :where)
+                 (add-expression (:having cm) (:alias pt) :having)
                  add-space
                  flatten
                  str/join)]]
