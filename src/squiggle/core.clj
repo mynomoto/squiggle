@@ -42,7 +42,7 @@
        :doc "Set of infix operators used verify if a keyword is a infix
        operator."}
   infix-operators
-  #{:> :< := :>= :<= :!= :<> :like :not= :in :not-in :between})
+  #{:> :< := :>= :<= :!= :<> :like :not= :in :not-in :between :is-null :not-null})
 
 (def ^{:private true
        :doc "Map of options for create-table used to convert keywords to
@@ -80,26 +80,34 @@
     :else          (throw (IllegalArgumentException. "Incorrect option format."))))
 
 (defn- prefix-column
-  "Given a table alias map and a column return a string of prefixed column."
-  [am c]
-  (let [default-table (if (= 1 (count am)) (key (first am)))
-        [cn tn & r] (reverse (str/split (name c) #"\."))
-        tn (or tn (if default-table (name default-table)))]
-    (str
-      (if r (str (str/join "." (reverse r)) "."))
-      (if (or ((keyword tn) am)
-                tn)
-        (str (name (or ((keyword tn) am)
-                tn)) "."))
-      cn)))
+  "Given a table alias map, a column alias map and a column returns the
+  prefixed column string. If the column is a column alias, returns the
+  original column. Always apply the column alias."
+  [ta ca c]
+  (if (coll? c)
+    (let [pcolumn (:string (prefix-column ta ca (first c)))]
+      {:string (str pcolumn " AS " (name (last c)))
+       :alias {(last c) (keyword pcolumn)}})
+    (let [ra (c ca)
+          default-table (if (= 1 (count ta)) (key (first ta)))
+          [cn tn & r] (reverse (str/split (name c) #"\."))
+          tn (or tn (if default-table (name default-table)))
+          tb-nm (if-let [tb-nm (or ((keyword tn) ta) tn)] tb-nm)
+          tb-col (if tb-nm (str (name tb-nm) "." cn) cn)]
+      {:string
+       (str (if r (str (str/join "." (reverse r)) "."))
+            (if ra
+              (name ra)
+              tb-col))})))
 
 (defn- prefix-list-columns
-  "Given columns and a process table map return a string of prefixed columns."
-  [cs am]
-  (let [cs (or cs
-              [:*])]
-    (str/join ", "
-              (map (partial prefix-column am) cs))))
+  "Given columns and a table alias map returns the prefixed columns string."
+  [cs ta]
+  (let [cs (or cs [:*])
+        pc (map (partial prefix-column ta nil) cs)
+        a (map :alias pc)]
+    {:string (str/join ", " (map :string pc))
+     :alias (reduce merge a)}))
 
 (defn- pre-process-exp*
   "Given a form, return a pre-processed form in the correct order for
@@ -157,16 +165,16 @@
   (walk/postwalk-replace operators->str ex))
 
 (defn- add-columns*
-  [m f]
+  [ta ca f]
   (if (keyword? f)
-    (prefix-column m f)
+    (:string (prefix-column ta ca f))
     f))
 
 (defn- add-columns
   "Given an alias map and an expression returns a expression with column
   strings replacing column keywords."
-  [m ex]
-  (walk/postwalk (partial add-columns* m) ex))
+  [ta ca ex]
+  (walk/postwalk (partial add-columns* ta ca) ex))
 
 (defn- fix-in-vector*
   "We need the vector following \"IN\" comma separated."
@@ -204,13 +212,13 @@
 (defn- exp-gen
   "Given a expression, a alias map and the expression type, returns the
   string for the expression."
-  [e m type]
+  [e ta ca type]
   (let [exp (some->> e
                      pre-process-exp
                      sanitize
                      add-operators
                      fix-in-vector
-                     (add-columns m)
+                     (add-columns ta ca)
                      parentesis
                      add-space
                      flatten)]
@@ -258,8 +266,8 @@
 (defn add-expression
   "Given an select expression, a where or having expression and an alias
   map, returns the select expression with the where/having expression."
-  [ex we m ty]
-  (if-let [w (exp-gen we m ty)]
+  [ex we ta ca ty]
+  (if-let [w (exp-gen we ta ca ty)]
     (conj ex w)
     ex))
 
@@ -267,12 +275,13 @@
   "Given a select command map, returns a select query vector."
   [cm]
    (let [pt (process-tables (:table cm))
+         pc (prefix-list-columns (:columns cm) (:alias pt))
          qv [(-> ["SELECT"
-                  (prefix-list-columns (:columns cm) (:alias pt))
+                  (:string pc)
                   "FROM"
                   (:string pt)]
-                 (add-expression (:where cm) (:alias pt) :where)
-                 (add-expression (:having cm) (:alias pt) :having)
+                 (add-expression (:where cm) (:alias pt) (:alias pc) :where)
+                 (add-expression (:having cm) (:alias pt) (:alias pc) :having)
                  add-space
                  flatten
                  str/join)]]
@@ -293,7 +302,7 @@
     :create-table
     (sql-create (:table cm) (:columns cm) (:opts cm))
 
-    (throw (IllegalArgumentException. "Incorrect :command key format."))))
+    (throw (IllegalArgumentException. "Incorrect :command value format."))))
 
 
 (defn select

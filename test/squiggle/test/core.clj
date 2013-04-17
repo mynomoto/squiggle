@@ -69,26 +69,78 @@
   (testing "default"
     (is (= (sql sl)
            ["SELECT user.* FROM user"])))
+
   (testing "with table alias"
     (is (= (sql (assoc sl :table [[:user :u]]))
            ["SELECT u.* FROM user AS u"])))
-  (testing "with table columns"
+
+  (testing "with one column"
+    (is (= (sql (assoc sl :columns [:username]))
+           ["SELECT user.username FROM user"])))
+
+  (testing "with columns"
     (is (= (sql (assoc sl :columns [:username :role]))
            ["SELECT user.username, user.role FROM user"])))
+
+  (testing "with one column alias"
+    (is (= (sql (assoc sl :columns [[:username :login]]))
+           ["SELECT user.username AS login FROM user"])))
+
+  (testing "with columns aliases"
+    (is (= (sql (assoc sl :columns [[:username :login] [:role :perfil]]))
+           ["SELECT user.username AS login, user.role AS perfil FROM user"])))
+
   (testing "with table alias and columns"
     (is (= (sql (assoc sl :table [[:user :u]] :columns [:username :role]))
            ["SELECT u.username, u.role FROM user AS u"])))
+
+  (testing "with table and columns aliases"
+    (is (= (sql (assoc sl :table [[:user :u]]
+                          :columns [[:username :login] [:role :perfil]]))
+           ["SELECT u.username AS login, u.role AS perfil FROM user AS u"])))
+
   (testing "with several tables and columns"
     (is (= (sql (assoc sl :table [[:user :u] [:email :e] :address]
                           :columns [:user.username :user.role
                                     :email.title :address.zip]))
            [(str "SELECT u.username, u.role, e.title, address.zip "
                  "FROM user AS u, email AS e, address")])))
+
+  (testing "with several tables and columns with alias"
+    (is (= (sql (assoc sl :table [[:user :u] [:email :e] :address]
+                          :columns [[:user.username :login] :user.role
+                                    :email.title [:address.zip :code]]))
+           [(str "SELECT u.username AS login, u.role, e.title, "
+                 "address.zip AS code "
+                 "FROM user AS u, email AS e, address")])))
+
   (testing "with a simple where clause"
+    (is (= (sql (assoc sl :where [:and [:= :username "user"]]))
+           [(str "SELECT user.* FROM user "
+                 "WHERE user.username = ?")
+            "user"])))
+
+  (testing "with a simple where clause and aliases"
+    (is (= (sql (assoc sl :where [:and [:= :username "user"]]
+                          :table [[:user :u]]
+                          :columns [[:username :login]]))
+           [(str "SELECT u.username AS login FROM user AS u "
+                 "WHERE u.username = ?")
+            "user"])))
+
+  (testing "replaces column alias with columns in a where clause"
+    (is (= (sql (assoc sl :where [:and [:= :login "user"]]
+                          :table [[:user :u]]
+                          :columns [[:username :login]]))
+           [(str "SELECT u.username AS login FROM user AS u "
+                 "WHERE u.username = ?")
+            "user"])))
+
+  (testing "with a complex where clause"
     (is (= (sql (assoc sl :where [:and [:in :username ["user" "u" "admin"]]
                                        [:like :roles "%us%"]
                                        [:or [:< :id 1000]
-                                       [:> :id 0]]]))
+                                            [:> :id 0]]]))
            [(str "SELECT user.* FROM user "
                  "WHERE user.username IN ( ? ,  ? ,  ? ) AND "
                  "user.roles LIKE ? AND ( user.id < ? OR user.id > ? )")
