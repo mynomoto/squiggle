@@ -85,9 +85,14 @@
   original column. Always apply the column alias."
   [ta ca c]
   (if (coll? c)
-    (let [pcolumn (:string (prefix-column ta ca (first c)))]
-      {:string (str pcolumn " AS " (name (last c)))
-       :alias {(last c) (keyword pcolumn)}})
+    (if (coll? (first c))
+      (if (= 1 (count (first c)))
+        {:string (str (ffirst c) " AS " (name (last c)))
+         :alias {(last c) (first c)}})
+      (let [pcolumn (:string (prefix-column ta ca (first c)))]
+        {:string (str pcolumn " AS " (name (last c)))
+         :alias {(last c) (keyword pcolumn)}}))
+
     (let [ra (c ca)
           default-table (if (= 1 (count ta)) (key (first ta)))
           [cn tn & r] (reverse (str/split (name c) #"\."))
@@ -289,9 +294,9 @@
         (vec (concat qv arguments))
         qv)))
 
-(defn sql
+(defn sql-gen
   "Given a command map return the sql code."
-  [cm]
+  [db cm]
   (case (:command cm)
     :select
     (sql-select cm)
@@ -304,6 +309,7 @@
 
     (throw (IllegalArgumentException. "Incorrect :command value format."))))
 
+(def sql (partial sql-gen :h2))
 
 (defn select
   "Given an entity returns a select query for the entity."

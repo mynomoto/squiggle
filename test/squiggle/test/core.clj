@@ -23,18 +23,20 @@
           :temp false
           :temporary false}})
 
+(def sql-h2 (partial sql-gen :h2))
+
 (deftest test-create-table
   (testing "default"
-    (is (= (sql ct)
+    (is (= (sql-h2 ct)
            ["CREATE TABLE user IF NOT EXISTS (id identity PRIMARY KEY)"])))
   (testing "without :if-not-exists"
-    (is (= (sql (assoc-in ct [:opts :if-not-exists] false))
+    (is (= (sql-h2 (assoc-in ct [:opts :if-not-exists] false))
            ["CREATE TABLE user (id identity PRIMARY KEY)"])))
   (testing "with :temp"
-    (is (= (sql (assoc-in ct [:opts :temp] true))
+    (is (= (sql-h2 (assoc-in ct [:opts :temp] true))
            ["CREATE TABLE TEMPORARY user IF NOT EXISTS (id identity PRIMARY KEY)"])))
   (testing "with :temporary"
-    (is (= (sql (assoc-in ct [:opts :temporary] true))
+    (is (= (sql-h2 (assoc-in ct [:opts :temporary] true))
            ["CREATE TABLE TEMPORARY user IF NOT EXISTS (id identity PRIMARY KEY)"]))))
 
 (def dt
@@ -46,20 +48,20 @@
 
 (deftest test-drop-table
   (testing "default"
-    (is (= (sql dt)
+    (is (= (sql-h2 dt)
            ["DROP TABLE IF EXISTS user"])))
   (testing "without :if-exists"
-    (is (= (sql (assoc-in dt [:opts :if-exists] false))
+    (is (= (sql-h2 (assoc-in dt [:opts :if-exists] false))
            ["DROP TABLE user"])))
   (testing "with :cascade"
-    (is (= (sql (assoc-in dt [:opts :cascade] true)))
+    (is (= (sql-h2 (assoc-in dt [:opts :cascade] true)))
            ["DROP TABLE IF EXISTS user CASCADE"]))
   (testing "with :restrict"
-    (is (= (sql (assoc-in dt [:opts :restrict] true))
+    (is (= (sql-h2 (assoc-in dt [:opts :restrict] true))
            ["DROP TABLE IF EXISTS user RESTRICT"])))
   (testing "with :restrict and :cascade"
     (is (thrown? IllegalArgumentException
-                 (sql (assoc dt :opts {:restrict true :cascade true}))))))
+                 (sql-h2 (assoc dt :opts {:restrict true :cascade true}))))))
 
 (def sl
   {:command :select
@@ -67,47 +69,51 @@
 
 (deftest test-select-query
   (testing "default"
-    (is (= (sql sl)
+    (is (= (sql-h2 sl)
            ["SELECT user.* FROM user"])))
 
   (testing "with table alias"
-    (is (= (sql (assoc sl :table [[:user :u]]))
+    (is (= (sql-h2 (assoc sl :table [[:user :u]]))
            ["SELECT u.* FROM user AS u"])))
 
   (testing "with one column"
-    (is (= (sql (assoc sl :columns [:username]))
+    (is (= (sql-h2 (assoc sl :columns [:username]))
            ["SELECT user.username FROM user"])))
 
   (testing "with columns"
-    (is (= (sql (assoc sl :columns [:username :role]))
+    (is (= (sql-h2 (assoc sl :columns [:username :role]))
            ["SELECT user.username, user.role FROM user"])))
 
+  (testing "with functions as columns"
+    (is (= (sql-h2 (assoc sl :columns [[["count(*)"] :count]]))
+           ["SELECT count(*) AS count FROM user"])))
+
   (testing "with one column alias"
-    (is (= (sql (assoc sl :columns [[:username :login]]))
+    (is (= (sql-h2 (assoc sl :columns [[:username :login]]))
            ["SELECT user.username AS login FROM user"])))
 
   (testing "with columns aliases"
-    (is (= (sql (assoc sl :columns [[:username :login] [:role :perfil]]))
+    (is (= (sql-h2 (assoc sl :columns [[:username :login] [:role :perfil]]))
            ["SELECT user.username AS login, user.role AS perfil FROM user"])))
 
   (testing "with table alias and columns"
-    (is (= (sql (assoc sl :table [[:user :u]] :columns [:username :role]))
+    (is (= (sql-h2 (assoc sl :table [[:user :u]] :columns [:username :role]))
            ["SELECT u.username, u.role FROM user AS u"])))
 
   (testing "with table and columns aliases"
-    (is (= (sql (assoc sl :table [[:user :u]]
+    (is (= (sql-h2 (assoc sl :table [[:user :u]]
                           :columns [[:username :login] [:role :perfil]]))
            ["SELECT u.username AS login, u.role AS perfil FROM user AS u"])))
 
   (testing "with several tables and columns"
-    (is (= (sql (assoc sl :table [[:user :u] [:email :e] :address]
+    (is (= (sql-h2 (assoc sl :table [[:user :u] [:email :e] :address]
                           :columns [:user.username :user.role
                                     :email.title :address.zip]))
            [(str "SELECT u.username, u.role, e.title, address.zip "
                  "FROM user AS u, email AS e, address")])))
 
   (testing "with several tables and columns with alias"
-    (is (= (sql (assoc sl :table [[:user :u] [:email :e] :address]
+    (is (= (sql-h2 (assoc sl :table [[:user :u] [:email :e] :address]
                           :columns [[:user.username :login] :user.role
                                     :email.title [:address.zip :code]]))
            [(str "SELECT u.username AS login, u.role, e.title, "
@@ -115,13 +121,13 @@
                  "FROM user AS u, email AS e, address")])))
 
   (testing "with a simple where clause"
-    (is (= (sql (assoc sl :where [:and [:= :username "user"]]))
+    (is (= (sql-h2 (assoc sl :where [:and [:= :username "user"]]))
            [(str "SELECT user.* FROM user "
                  "WHERE user.username = ?")
             "user"])))
 
   (testing "with a simple where clause and aliases"
-    (is (= (sql (assoc sl :where [:and [:= :username "user"]]
+    (is (= (sql-h2 (assoc sl :where [:and [:= :username "user"]]
                           :table [[:user :u]]
                           :columns [[:username :login]]))
            [(str "SELECT u.username AS login FROM user AS u "
@@ -129,7 +135,7 @@
             "user"])))
 
   (testing "replaces column alias with columns in a where clause"
-    (is (= (sql (assoc sl :where [:and [:= :login "user"]]
+    (is (= (sql-h2 (assoc sl :where [:and [:= :login "user"]]
                           :table [[:user :u]]
                           :columns [[:username :login]]))
            [(str "SELECT u.username AS login FROM user AS u "
@@ -137,7 +143,7 @@
             "user"])))
 
   (testing "with a complex where clause"
-    (is (= (sql (assoc sl :where [:and [:in :username ["user" "u" "admin"]]
+    (is (= (sql-h2 (assoc sl :where [:and [:in :username ["user" "u" "admin"]]
                                        [:like :roles "%us%"]
                                        [:or [:< :id 1000]
                                             [:> :id 0]]]))
