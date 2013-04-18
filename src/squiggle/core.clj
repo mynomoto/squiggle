@@ -278,11 +278,12 @@
   "Given a table, a vector of columns and a map of options, generates a
   command to create a table and columns with options."
   [t c opts]
-  [(str "CREATE TABLE "
+  [(str "CREATE "
         (if (or (:temp opts)
                 (:temporary opts)) "TEMPORARY ")
+        "TABLE "
+        (if (:if-not-exists opts) "IF NOT EXISTS ")
         (:string (process-tables t))
-        (if (:if-not-exists opts) " IF NOT EXISTS")
         " ("
         (ct-columns c)
         ")")])
@@ -361,12 +362,24 @@
         (vec (concat qv arguments))
         qv)))
 
+(defn sql-insert
+  "Given a command map return the insert sql code"
+  [{:keys [table columns data]}]
+  (let [c (count columns)]
+    (concat [(str "INSERT INTO " (name table) " ("
+                  (str/join ", "(map name columns)) ") VALUES ("
+                  (str/join ", " (repeat c "?")) ")")]
+            data)))
+
 (defn sql-gen
   "Given a command map return the sql code."
   [db cm]
   (case (:command cm)
     :select
     (sql-select cm)
+
+    :insert
+    (sql-insert cm)
 
     :drop-table
     (sql-drop (:table cm) (:opts cm))
@@ -375,6 +388,16 @@
     (sql-create (:table cm) (:columns cm) (:opts cm))
 
     (throw (IllegalArgumentException. "Incorrect :command value format."))))
+
+(defn sql-exec!
+  "Given a database, a command map and a connection map, execute the
+  command."
+  [db c cm]
+  (case (:command cm)
+    :select
+    (jdbc/query c (sql-gen db cm))
+
+    (jdbc/execute! c (sql-gen db cm))))
 
 (defn select
   "Given an entity returns a select query for the entity."
@@ -387,24 +410,3 @@
    :having nil
    :offset nil
    :limit nil})
-
-(defn query [db cm]
-  (jdbc/query db (sql-gen :h2 cm)))
-
-(defmulti auto
-  "Given a db and a options map returns a column vector."
-  (fn [db _] db))
-
-(defmethod auto :h2
-  [_ opts]
-  (case (:type opts)
-    :pk [:identity (or (:name opts) :id) :primary-key]
-    :belongs (auto :default opts)
-    :erro))
-
-(defmethod auto :default
-  [_ opts]
-  (case (:type opts)
-    :pk [:integer (or (:name opts) :id) :primary-key]
-    :belongs [:integer (or (:name opts) (keyword (str (name (:relationship opts)) "_id")))]
-    :erro))

@@ -24,16 +24,16 @@
 (deftest test-create-table
   (testing "default"
     (is (= (sql ct)
-           ["CREATE TABLE user IF NOT EXISTS (id identity PRIMARY KEY)"])))
+           ["CREATE TABLE IF NOT EXISTS user (id identity PRIMARY KEY)"])))
   (testing "without :if-not-exists"
     (is (= (sql (assoc-in ct [:opts :if-not-exists] false))
            ["CREATE TABLE user (id identity PRIMARY KEY)"])))
   (testing "with :temp"
     (is (= (sql (assoc-in ct [:opts :temp] true))
-           ["CREATE TABLE TEMPORARY user IF NOT EXISTS (id identity PRIMARY KEY)"])))
+           ["CREATE TEMPORARY TABLE IF NOT EXISTS user (id identity PRIMARY KEY)"])))
   (testing "with :temporary"
     (is (= (sql (assoc-in ct [:opts :temporary] true))
-           ["CREATE TABLE TEMPORARY user IF NOT EXISTS (id identity PRIMARY KEY)"]))))
+           ["CREATE TEMPORARY TABLE IF NOT EXISTS user (id identity PRIMARY KEY)"]))))
 
 (def dt
   {:command :drop-table
@@ -195,17 +195,17 @@
            ["SELECT user.* FROM user OFFSET 10"])))
   )
 
-{:command :select
- :table :user
- :modifier nil
- :where [:and [:in :username ["user" "u" "admin"]]
-              [:like :roles "%us%"]
-              [:or [:< :id 1000]
-                   [:> :id 0]]]
- :group-by nil
- :having nil
- :offset nil
- :limit nil}
+(def ins
+  {:command :insert
+   :table :user
+   :columns [:username :password :role]
+   :data [["m" "mistery" "user"]
+          ["a" "passwd" "admin"]]})
+
+(deftest insert
+  (testing "default"
+    (is (= (sql ins)
+           ["INSERT INTO user (username, password, role) VALUES (?, ?, ?)" ["m" "mistery" "user"] ["a" "passwd" "admin"]]))))
 
 (defmacro with-private-fns [[ns fns] & tests]
   "Refers private fns from ns and runs tests in context."
