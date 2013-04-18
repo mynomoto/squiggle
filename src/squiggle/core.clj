@@ -310,6 +310,21 @@
                (apply str (map modifier m)))
    :else (str " " (name m))))
 
+(defn order-by
+  [ob]
+  (cond
+   (keyword? ob) (name ob)
+   (string? ob) ob
+   (some coll? ob) (map order-by ob)
+   :else (str/join " " (map name ob))))
+
+(defn add-order-by
+  [ex ob]
+  (if ob
+    (let [ob (order-by ob)]
+      (conj ex (str "ORDER BY " (if (coll? ob) (str/join ", " ob) ob))))
+    ex))
+
 (defn sql-select
   "Given a select command map, returns a select query vector."
   [cm]
@@ -323,6 +338,7 @@
                  (add-expression (:where cm) (:alias pt) (:alias pc) :where)
                  (add-group-by (:group-by cm) (:alias pt))
                  (add-expression (:having cm) (:alias pt) (:alias pc) :having)
+                 (add-order-by (:order-by cm))
                  ;orderby
                  ;limit
                  ;offset

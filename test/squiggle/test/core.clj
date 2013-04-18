@@ -81,15 +81,17 @@
                           :modifier :distinct))
            ["SELECT distinct user.username FROM user"])))
 
-  (testing "with one column and a modifier"
+  (testing "with one column, a modifier and a order by clause"
     (is (= (sql (assoc sl :columns [:username]
-                          :modifier [:top 10]))
-           ["SELECT top 10 user.username FROM user"])))
+                          :modifier [:top 10]
+                          :order-by :username))
+           ["SELECT top 10 user.username FROM user ORDER BY username"])))
 
-  (testing "with one column and modifiers"
+  (testing "with one column, modifiers and a order by clause"
     (is (= (sql (assoc sl :columns [:username]
-                          :modifier [:distinct [:top 10]]))
-           ["SELECT distinct top 10 user.username FROM user"])))
+                          :modifier [:distinct [:top 10]]
+                          :order-by [:username]))
+           ["SELECT distinct top 10 user.username FROM user ORDER BY username"])))
 
   (testing "with columns"
     (is (= (sql (assoc sl :columns [:username :role]))
