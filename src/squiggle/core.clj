@@ -301,13 +301,13 @@
     (conj ex (str "GROUP BY " (:string (prefix-list-columns gb ta))))
     ex))
 
-(defn modifier
+(defn add-modifier
   [m]
   (cond
    (nil? m) m
    (coll? m) (if (integer? (second m))
                (str " " (name (first m)) " " (second m))
-               (apply str (map modifier m)))
+               (apply str (map add-modifier m)))
    :else (str " " (name m))))
 
 (defn order-by
@@ -325,28 +325,39 @@
       (conj ex (str "ORDER BY " (if (coll? ob) (str/join ", " ob) ob))))
     ex))
 
+(defn add-limit
+  [ex i]
+  (if i
+    (conj ex (str "LIMIT " i))
+    ex))
+
+(defn add-offset
+  [ex i]
+  (if i
+    (conj ex (str "OFFSET " i))
+    ex))
+
 (defn sql-select
   "Given a select command map, returns a select query vector."
-  [cm]
-   (let [pt (process-tables (:table cm))
-         pc (prefix-list-columns (:columns cm) (:alias pt))
+  [{:keys [table columns where group-by having order-by limit offset modifier]}]
+   (let [pt (process-tables table)
+         pc (prefix-list-columns columns (:alias pt))
          qv [(-> [(str "SELECT"
-                  (modifier (:modifier cm)))
+                  (add-modifier modifier))
                   (:string pc)
                   "FROM"
                   (:string pt)]
-                 (add-expression (:where cm) (:alias pt) (:alias pc) :where)
-                 (add-group-by (:group-by cm) (:alias pt))
-                 (add-expression (:having cm) (:alias pt) (:alias pc) :having)
-                 (add-order-by (:order-by cm))
-                 ;orderby
-                 ;limit
-                 ;offset
+                 (add-expression where (:alias pt) (:alias pc) :where)
+                 (add-group-by group-by (:alias pt))
+                 (add-expression having (:alias pt) (:alias pc) :having)
+                 (add-order-by order-by)
+                 (add-limit limit)
+                 (add-offset offset)
                  add-space
                  flatten
                  str/join)]]
-      (if-let [arguments (concat (gen-arguments (:where cm))
-                                 (gen-arguments (:having cm)))]
+      (if-let [arguments (concat (gen-arguments where)
+                                 (gen-arguments having))]
         (vec (concat qv arguments))
         qv)))
 

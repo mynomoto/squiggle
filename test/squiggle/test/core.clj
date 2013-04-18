@@ -185,6 +185,14 @@
                           :having [:> "!count(*)" 2]
                           :group-by [:role]))
            ["SELECT COUNT(*) AS count FROM user GROUP BY user.role HAVING count(*) > ?" 2])))
+
+  (testing "simple limit clause"
+    (is (= (sql (assoc sl :limit 10))
+           ["SELECT user.* FROM user LIMIT 10"])))
+
+  (testing "simple offset clause"
+    (is (= (sql (assoc sl :offset 10))
+           ["SELECT user.* FROM user OFFSET 10"])))
   )
 
 {:command :select
