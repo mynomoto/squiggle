@@ -68,8 +68,15 @@ corresponding values.
   (:distinct, :top)
 
 :table
-  (Required, String, Keyword, Vector of Strings or Keywords)
-  The target table or tables. Create table accepts only one table.
+  (Required, String, Keyword, Map, Vector of Strings, Keywords or Maps)
+  A single table: keyword or string of the table name
+  :user
+  "USER"
+  A single table with alias: map with table name as key and alias as value.
+  {:user :u}
+  Several tables: Vector of single tables.
+  [:user {:email :e}]
+  :create accepts only one table.
 
 :where
   (Optional, Vector of Expressions)
@@ -101,21 +108,22 @@ corresponding values.
   (Optional, Vector of Keywords)
   Columns used to order the result.
 
-## Column Vector
-A column map is a Clojure vector in the format [type c-name options]. E.g.:
-[:integer :id :primary-key]
+## Create Column Vector
+A column vector for the create command is a Clojure vector in the format
+[name type options]. E.g.:
+[:id :integer :primary-key]
+
+name
+ (Required, Keyword)
+ The name of the column.
 
 type
  (Required, {Keyword, String})
  The datatype of the column. E.g. :varchar, "varchar(100)", :identity.
 
-c-name
- (Required, Keyword)
- The name of the column.
-
 options
- (Optional, {String, Keyword, Vector of keywords})
+ (Optional, {String, Keyword, Vector of keywords and/or strings})
  Options for the column. It can be:
  * String: "NOT-NULL UNIQUE"
  * Keyword: :unique
- * Vector of keywords: [:not-null :unique]
+ * Vector of keywords and/or strings: [:not-null "unique"]

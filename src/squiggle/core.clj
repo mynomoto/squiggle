@@ -3,6 +3,150 @@
             [clojure.walk :as walk]
             [clojure.string :as str]))
 
+(defn- not-unitary?
+  [c]
+  (not= 1 (count c)))
+
+(defn- identifier->str
+  "Given a db and a identifier converts the identifier to a string."
+  [db t]
+  (if (= (name t) "*")
+    "*"
+    (case db
+      :mysql (str "`" (name t) "`")
+      :mssql (str "[" (name t) "]")
+      (str "\"" (name t) "\""))))
+
+(defn- select-string?
+  [f]
+  (when (and (string? f) (= "select" (str/lower-case (subs f 0 (min (count f) 6)))))
+    true))
+
+(defn- select-vector?
+  [f]
+  (if (and (vector? f) (select-string? (first f)))
+    true))
+
+(defn- table-string
+  "Given a db and a table or a vector of tables, returns a string for
+   a table or list of tables."
+  [db t]
+  (cond
+   (string? t) t
+   (keyword? t)
+   (let [[tn dbn] (reverse (str/split (name t) #"\."))
+         dbn (if dbn (str (identifier->str db dbn) "."))]
+     (str dbn (identifier->str db tn)))
+
+   (map? t)
+   (if (not-unitary? t)
+     (throw (IllegalArgumentException.
+             "A table map can only have one key value pair."))
+     (let [[tname talias] (first t)]
+       (str (table-string db tname) " AS " (table-string db talias))))
+
+   (select-vector? t)
+   (str "(" (first t) ")")
+
+   (vector? t)
+   (str/join ", " (map (partial table-string db) t))
+
+   :else
+   (throw (IllegalArgumentException.
+           "Invalid value for :table key"))))
+
+(defn- sql-drop
+  "Given a db and a command map generates a drop table sql code."
+  [db {:keys [table opts]}]
+  (let [opts (set opts)]
+    (if (and (:cascade opts)
+             (:restrict opts))
+      (throw (IllegalArgumentException.
+              "Can't use both :cascade and :restrict at the same time."))
+      [(str "DROP TABLE "
+            (if (:if-exists opts)
+              "IF EXISTS ")
+            (table-string db table)
+            (if (:cascade opts)
+              " CASCADE")
+            (if (:restrict opts)
+              " RESTRICT"))])))
+
+(def ^{:private true
+       :doc "Map of options for create-table used to convert keywords to
+       strings."}
+  create-table-options
+  {:primary-key "PRIMARY KEY"
+   :unique      "UNIQUE"
+   :null        "NULL"
+   :not-null    "NOT NULL"})
+
+(defn- convert-options
+  "Convert the options of each column for the create table command."
+  [opt]
+  (cond
+    (string? opt)  opt
+    (keyword? opt) (opt create-table-options)
+    (vector? opt)  (str/join " " (map convert-options opt))
+    :else (throw (IllegalArgumentException. "Incorrect option format."))))
+
+(defn- ct-columns
+  "Given a vector of column vectors returns a string to create this columns in
+  a create table command."
+  [db c]
+  (str/join ", "
+   (for [[cname type options] c]
+     (str/join
+     [(if (string? cname) cname (identifier->str db cname)) " "
+      (str (name type))
+      (if options (str " " (convert-options options)))]))))
+
+(defn- sql-create
+  "Given a db and a command map generates a create table sql code."
+  [db {:keys [table column opts]}]
+  (let [opts (set opts)]
+    [(str "CREATE "
+          (if (or (:temp opts)
+                  (:temporary opts)) "TEMPORARY ")
+          "TABLE "
+          (if (:if-not-exists opts) "IF NOT EXISTS ")
+          (table-string db table)
+          " (" (ct-columns db column) ")")]))
+
+(defn- sql-insert
+  "Given a db and a command map return the insert sql code."
+  [db {:keys [table column values select]}]
+  (let [c (count column)
+        v (count values)]
+    (cond
+      (and values select)
+      (throw (IllegalArgumentException.
+               (str "Can't insert select and values at the same time with squiggle. "
+                    "Not sure if it's possible at all.")))
+
+      select
+      (into [(str "INSERT INTO " (identifier->str db table)
+                  (str " " (first select)))] (rest select))
+
+      values
+      (cond
+        (= :not-sure db)
+        (into
+          [(str "INSERT INTO " (identifier->str db table) " ("
+                (str/join ", " (map (partial identifier->str db) column))
+                ") VALUES ("
+                (str/join ", " (repeat c "?")) ")")]
+          values)
+
+       :else
+       (into
+        [(str "INSERT INTO " (identifier->str db table) " ("
+              (str/join ", " (map (partial identifier->str db) column)) ") VALUES "
+              (str/join ", "
+                        (repeat v (str "(" (str/join ", "
+                                                     (repeat c "?")) ")"))))]
+        (flatten values))))))
+
 (def ^{:private true
        :doc "Map of operators used to convert the operator keyword to a
        string."}
@@ -12,9 +156,9 @@
    :>=       ">="
    :<        "<"
    :<=       "<="
-   :!=       "!="
+   :!=       "<>"
    :<>       "<>"
-   :not=     "!="
+   :not=     "<>"
    :like     "LIKE"
    :in       "IN"
    :not-in   "NOT IN"
@@ -42,90 +186,35 @@
        :doc "Set of infix operators used verify if a keyword is a infix
        operator."}
   infix-operators
-  #{:> :< := :>= :<= :!= :<> :like :not= :in :not-in :between :is-null :not-null})
+  #{:> :< := :>= :<= :!= :<> :like :not= :in :not-in :between :is-null
+    :not-null})
 
-(def ^{:private true
-       :doc "Map of options for create-table used to convert keywords to
-       strings."}
-  create-table-options
-  {:primary-key "PRIMARY KEY"
-   :unique      "UNIQUE"
-   :null        "NULL"
-   :not-null    "NOT NULL"})
-
-(defn- table-alias
+#_(defn- table-alias
+  "Given a table return a map of table as key and alias as val.
+  Given a vector of tables, return a seq of maps."
   [t]
-  (if (coll? t)
-    (let [[tname talias] t]
-      {:string (str (name tname) " AS " (name talias))
-       :alias {tname talias}})
-    {:string (name t)}))
-
-(defn- process-tables
-  [t]
-  (if (coll? t)
-    (let [am (map table-alias t)
-          a (map :alias am)]
-      {:string (str/join ", " (map :string am))
-       :alias (reduce merge a)})
-    {:string (name t)
-     :alias {t t}}))
-
-(defn- convert-options
-  [opt]
   (cond
-    (string? opt)  opt
-    (coll? opt)    (str/join " " (replace create-table-options opt))
-    (keyword? opt) (opt create-table-options)
-    :else          (throw (IllegalArgumentException. "Incorrect option format."))))
+   (map? t)
+   (if (not= 1 (count t))
+     (throw (IllegalArgumentException.
+             "A table map can only have one key value pair."))
+     t)
 
-(defn- prefix-column
-  "Given a table alias map, a column alias map and a column returns the
-  prefixed column string. If the column is a column alias, returns the
-  original column. Always apply the column alias."
-  [ta ca c]
-  (if (coll? c)
-    (if (and ca (ca c))
-      {:string (ca c)}
-      (if (coll? (first c))
-        (if (= 1 (count (first c)))
-          {:string (str (ffirst c) " AS " (name (last c)))
-           :alias {(last c) (ffirst c)}}
-          (let [[f a] (first c)
-                f (if (keyword? f) (or (f aggregators->str) (name f)) f)
-                a (if (keyword? a) (if (= a :*) "*" (:string (prefix-column ta ca a))) (name a))]
-            {:string (str f "(" a ")" " AS " (name (last c)))
-             :alias {(first c) (str f "(" a ")")}}))
-        (let [pcolumn (:string (prefix-column ta ca (first c)))]
-          {:string (str pcolumn " AS " (name (last c)))
-           :alias {(last c) (keyword pcolumn)}})))
+   (vector? t)
+   (reduce merge (map table-alias t))
 
-    (let [ra (c ca)
-          default-table (if (= 1 (count ta)) (key (first ta)))
-          [cn tn & r] (reverse (str/split (name c) #"\."))
-          tn (or tn (if default-table (name default-table)))
-          tb-nm (if-let [tb-nm (or ((keyword tn) ta) tn)] tb-nm)
-          tb-col (if tb-nm (str (name tb-nm) "." cn) cn)]
-      {:string
-       (str (if r (str (str/join "." (reverse r)) "."))
-            (if ra
-              (name ra)
-              tb-col))})))
+   (or (keyword? t) (string? t))
+   {t nil}
 
-(defn- prefix-list-columns
-  "Given columns and a table alias map returns the prefixed columns string."
-  [cs ta]
-  (let [cs (or cs [:*])
-        pc (map (partial prefix-column ta nil) cs)
-        a (map :alias pc)]
-    {:string (str/join ", " (map :string pc))
-     :alias (reduce merge a)}))
+   :else
+   (throw (IllegalArgumentException.
+           "Invalid value for :table key"))))
 
 (defn- pre-process-exp*
   "Given a form, return a pre-processed form in the correct order for
   string generation."
   [f]
-  (if (coll? f)
+  (if (vector? f)
     (let [[o & r] f]
        (if (operators->str o)
          (cond
@@ -146,30 +235,40 @@
   [ex]
   (walk/postwalk pre-process-exp* ex))
 
-(defn- sanitize*
-  "Given a form, returns a string ? if the form isn't a collection or a
-  keyword."
+(defn- escaped-string?
   [f]
-  (if (or (coll? f) (keyword? f) (and (string? f) (= (first f) \!)))
+  (when (and (string? f) (= (first f) \!))
+    true))
+
+(defn- sanitize*
+  "Given a form, returns a string \"?\" if the form isn't a collection, a
+  keyword or a escaped string."
+  [f]
+  (if (or (coll? f) (keyword? f) (escaped-string? f) (select-string? f))
     f
     "?"))
 
 (defn- sanitize
-  "Given an expression, returns a sanitized expression with ? replacing
+  "Given an expression, returns a sanitized expression with \"?\" replacing
   arguments."
   [ex]
   (walk/postwalk sanitize* ex))
 
 (defn- arguments
-  "Given an expression returns a lazy seq of all arguments"
+  "Given an expression returns a seq of all arguments"
   [ex]
-  (remove #(if (and (string? %) (= (first %) \!)) true)
-          (remove keyword? (flatten ex))))
+  (seq (remove #(when (or (escaped-string? %) (select-string? %)) true)
+               (remove keyword? (flatten ex)))))
 
-(defn- gen-arguments
+(defn- fix-subselects*
+  [f]
+  (if (select-vector? f)
+    (str "(" (first f) ")")
+    f))
+
+(defn- fix-subselects
   [ex]
-  (when-let [a (seq (arguments (pre-process-exp ex)))]
-    a))
+  (walk/postwalk fix-subselects* ex))
 
 (defn- add-operators
   "Given an expression returns a expression with operator strings replacing
@@ -177,236 +276,371 @@
   [ex]
   (walk/postwalk-replace operators->str ex))
 
+(defn- aggregator-vector?
+  [f]
+  (when (and (vector? f) (= 2 (count f)) (aggregators->str (first f)))
+    true))
+
 (defn- add-columns*
-  [ta ca f]
-  (if (or (keyword? f) (and (vector? f) (= 2 (count f))))
-    (:string (prefix-column ta ca f))
-    f))
+  "Given a db and a column returns a string for that column."
+  [db f]
+  (cond
+   (keyword? f)
+   (let [[cn & r] (reverse (str/split (name f) #"\."))
+         r (if r (str (str/join "." (map (partial identifier->str db) (reverse r)))
+                      "."))]
+     (str r (identifier->str db cn)))
+
+   (aggregator-vector? f)
+   (str (aggregators->str (first f)) "(" (add-columns* db (second f)) ")")
+
+   :else f))
 
 (defn- add-columns
   "Given an alias map and an expression returns a expression with column
   strings replacing column keywords."
-  [ta ca ex]
-  (walk/prewalk (partial add-columns* ta ca) ex))
+  [db ex]
+  (walk/prewalk (partial add-columns* db) ex))
 
 (defn- remove-literal-mark*
+  "Given a string, if the string begins with \"!\" returns the string
+   without \"!\"."
   [f]
-  (if (and (string? f) (= (first f) \!))
+  (if (escaped-string? f)
     (str/replace-first f #"^!" "")
     f))
 
 (defn- remove-literal-mark
+  "Given an expression remove the literal marks of all strings."
   [ex]
   (walk/postwalk remove-literal-mark* ex))
 
+(defn- column-string
+  "Given a db and a column, or vector of columns, return a string to
+   be used in the select statement."
+  [db c]
+  (cond
+   (nil? c) "*"
+   (string? c) c
+   (keyword? c) (add-columns* db c)
+
+   (aggregator-vector? c)
+   (add-columns* db c)
+
+   (select-vector? c)
+   (str "(" (first c) ")")
+
+   (map? c)
+   (if (not-unitary? c)
+     (throw (IllegalArgumentException.
+             "A column map can only have one key value pair."))
+     (let [[cname calias] (first c)]
+       (str (column-string db cname) " AS " (add-columns* db calias))))
+
+   (vector? c)
+   (str/join ", " (map (partial column-string db) c))
+
+   :else
+   (throw (IllegalArgumentException.
+           "Invalid value for :column key"))))
+
 (defn- fix-in-vector*
-  "We need the vector following \"IN\" comma separated."
+  "Given a list, if it is a \"IN\" list return the last list as a comma
+   interposed vector."
   [f]
   (if (coll? f)
-    (if (= (second f) "IN")
+    (if (and (= (second f) "IN") (not (or (map? (last f)) (string? (last f)))))
       (list (first f) (second f) (vec (interpose ", " (last f))))
       f)
     f))
 
 (defn- fix-in-vector
+  "Given an expression fix all \"IN\" lists in this expression."
   [ex]
   (walk/postwalk fix-in-vector* ex))
 
 (defn- parentesis*
+  "Given a vector, returns a string of the vector contents enclosed in
+   parentesis."
   [f]
   (if (vector? f)
-    (list "(" (seq f) ")")
+    (if (every? string? f)
+      (str "(" (str/join f) ")")
+      (str "(" (str/join " " (flatten f)) ")"))
     f))
 
 (defn- parentesis
+  "Given an expression, returns a new expression with strings enclosed in
+   parentesis replacing vectors."
   [ex]
   (walk/postwalk parentesis* ex))
 
-(defn- add-space*
-  [f]
-  (if (coll? f)
-    (interpose " " f)
-    f))
-
 (defn- add-space
+  "Given an expression adds spaces between forms in the expression."
   [ex]
-  (walk/postwalk add-space* ex))
+  (interpose " " ex))
 
-(defn- exp-gen
-  "Given a expression, a alias map and the expression type, returns the
+(defn- add-expression
+  "Given a expression, the expression type and the db returns the
   string for the expression."
-  [e ta ca type]
+  [e ty db]
   (let [exp (some->> e
                      pre-process-exp
                      sanitize
+                     fix-subselects
                      add-operators
                      remove-literal-mark
                      fix-in-vector
-                     (add-columns ta ca)
+                     (add-columns db)
                      parentesis
-                     add-space
-                     flatten)]
+                     flatten
+                     add-space)]
     (cond
      (nil? exp) nil
-     (= type :where) (apply str "WHERE " exp)
-     (= type :having) (apply str "HAVING " exp)
+     (= ty :where) (apply str " WHERE " exp)
+     (= ty :having) (apply str " HAVING " exp)
+     (= ty :on) (apply str " ON " exp)
      :else (throw (IllegalArgumentException.
-                   "Only accepts type :where or :having.")))))
+                   "Only accepts type :where, :having or :on.")))))
 
-(defn sql-drop
-  "Given an entity generate a command to drop the entity table."
-  [t opts]
-  (if (and (:cascade opts)
-           (:restrict opts))
-    (throw (IllegalArgumentException.
-            "Can't use both :cascade and :restrict at the same time."))
-    [(str "DROP TABLE "(if (:if-exists opts) "IF EXISTS ") (:string (process-tables t))
-          (if (:cascade opts) " CASCADE") (if (:restrict opts) " RESTRICT"))]))
+(defn- set-expression
+  [db e]
+  (let [exp (some->> e
+                     pre-process-exp
+                     sanitize
+                     fix-subselects
+                     add-operators
+                     remove-literal-mark
+                     (add-columns db))
+        exp (if (coll? (first exp)) (map (partial str/join " ") exp) (str/join " " exp))]
+    (str " SET " (if (coll? exp) (str/join ", " exp) exp))))
 
-(defn- ct-columns
-  "Given a vector of column maps returns a string to create this columns in
-  a create-table command."
+(def ^{:private true
+       :doc "Map of aggregators used to convert the aggregator keyword to
+       a string"}
+  modifiers->str
+  {:distinct    "DISTINCT"
+   :distinct-on "DISTINCT ON"
+   :top         "TOP"})
+
+(defn- add-modifier
+  "Given a db and a list of modifiers returns the string of modifiers
+   for a select query."
+  [db m]
+  (if (nil? m)
+    m
+    (cond
+      (map? m)
+      (if (not-unitary? m)
+        (throw (IllegalArgumentException.
+                "A identifier map can only have one key value pair."))
+        (let [[mname margs] (first m)
+              margs (if (coll? margs)
+                      (str "(" (str/join ", " (map (partial add-columns* db) margs)) ")")
+                      margs)]
+          (str (or (modifiers->str mname) (name mname)) " " margs)))
+
+      (vector? m)
+      (str/join " " (map (partial add-modifier db) m))
+
+      :else (or (modifiers->str m) (name m)))))
+
+(defn- by-columns
+  "Given a db and a list of columns returns a order/group by string."
+  [db b]
+  (if (nil? b)
+    b
+    (if (vector? b)
+      (str/join ", " (map (partial add-columns* db) b))
+      (add-columns* db b))))
+
+(defn- add-group-by
+  "Given a db and a list of columns returns a group by string."
+  [db gb]
+  (if-let [gb (by-columns db gb)]
+    (str " GROUP BY " gb)))
+
+(defn- add-order-by
+  "Given a db and a list of columns returns a order by string."
+  [db ob]
+  (if-let [ob (by-columns db ob)]
+    (str " ORDER BY " ob)))
+
+(defn- add-limit
+  "Given a db and a integer returns a limit string."
+  [db i]
+  (if i
+    (str " LIMIT " i)))
+
+(defn- add-offset
+  "Given a db and a integer returns a offset string."
+  [db i]
+  (if i
+    (str " OFFSET " i)))
+
+(def
+  join->str
+  {:left "LEFT JOIN"
+   :right "RIGHT JOIN"
+   :inner "INNER JOIN"
+   :outer "FULL JOIN"
+   :full  "FULL JOIN"})
+
+(defn- single-join
+  "Given a db and a join map returns a join string"
+  [db {:keys [type table on]}]
+  (str (or (join->str type) (name type)) " "
+       (table-string db table)
+       (add-expression on :on db)))
+
+(defn- add-join
+  "Given a db and the contents of the join keyword returns a join string"
+  [db j]
+  (cond
+   (nil? j) j
+   (vector? j) (str/join " " (map (partial single-join db) j))
+   (map? j) (single-join db j)))
+
+(defn- join-args
+  "Given a join expression returns a seq of all arguments"
+  [j]
+  (cond
+   (nil? j) j
+   (vector? j) (arguments (concat (map :on j)))
+   :else (arguments (:on j))))
+
+(declare sql-select)
+
+(defn- process-subselects*
+  [db f]
+  (if (and (map? f) (= :select (:command f)))
+    (sql-select db f)
+    f))
+
+(defn- process-subselects
+  [db cm]
+  (walk/prewalk (partial process-subselects* db) cm))
+
+(defn- column-args
   [c]
-  (str/join ", "
-   (for [[type c-name options] c]
-     (str/join
-     [(name c-name) " "
-      (str (name type))
-      (if options (str " " (convert-options options)))]))))
-
-(defn sql-create
-  "Given a table, a vector of columns and a map of options, generates a
-  command to create a table and columns with options."
-  [t c opts]
-  [(str "CREATE "
-        (if (or (:temp opts)
-                (:temporary opts)) "TEMPORARY ")
-        "TABLE "
-        (if (:if-not-exists opts) "IF NOT EXISTS ")
-        (:string (process-tables t))
-        " ("
-        (ct-columns c)
-        ")")])
-
-(defn add-expression
-  "Given an select expression, a where or having expression and an alias
-  map, returns the select expression with the where/having expression."
-  [ex we ta ca ty]
-  (if-let [w (exp-gen we ta ca ty)]
-    (conj ex w)
-    ex))
-
-(defn add-group-by
-  [ex gb ta]
-  (if gb
-    (conj ex (str "GROUP BY " (:string (prefix-list-columns gb ta))))
-    ex))
-
-(defn add-modifier
-  [m]
   (cond
-   (nil? m) m
-   (coll? m) (if (integer? (second m))
-               (str " " (name (first m)) " " (second m))
-               (apply str (map add-modifier m)))
-   :else (str " " (name m))))
+   (nil? c) nil
+   (string? c) nil
+   (keyword? c) nil
 
-(defn order-by
-  [ob]
+   (map? c)
+   (if (not-unitary? c)
+     (throw (IllegalArgumentException.
+             "A column map can only have one key value pair."))
+     (let [[cname calias] (first c)]
+       (column-args cname)))
+
+   (aggregator-vector? c)
+   nil
+
+   (select-vector? c)
+   (rest c)
+
+   (vector? c)
+   (mapcat column-args c)
+
+   :else
+   (throw (IllegalArgumentException.
+           "Invalid value for :column key"))))
+
+(defn- table-args
+  "Given a table or a vector of tables, returns the args inside subselects."
+  [t]
   (cond
-   (keyword? ob) (name ob)
-   (string? ob) ob
-   (some coll? ob) (map order-by ob)
-   :else (str/join " " (map name ob))))
+   (string? t) nil
+   (keyword? t) nil
 
-(defn add-order-by
-  [ex ob]
-  (if ob
-    (let [ob (order-by ob)]
-      (conj ex (str "ORDER BY " (if (coll? ob) (str/join ", " ob) ob))))
-    ex))
+   (map? t)
+   (if (not-unitary? t)
+     (throw (IllegalArgumentException.
+             "A table map can only have one key value pair."))
+     (let [[tname talias] (first t)]
+       (table-args tname)))
 
-(defn add-limit
-  [ex i]
-  (if i
-    (conj ex (str "LIMIT " i))
-    ex))
+   (select-vector? t)
+   (rest t)
 
-(defn add-offset
-  [ex i]
-  (if i
-    (conj ex (str "OFFSET " i))
-    ex))
+   (vector? t)
+   (mapcat table-args t)
 
-(defn sql-select
-  "Given a select command map, returns a select query vector."
-  [{:keys [table columns where group-by having order-by limit offset modifier]}]
-   (let [pt (process-tables table)
-         pc (prefix-list-columns columns (:alias pt))
-         qv [(-> [(str "SELECT"
-                  (add-modifier modifier))
-                  (:string pc)
-                  "FROM"
-                  (:string pt)]
-                 (add-expression where (:alias pt) (:alias pc) :where)
-                 (add-group-by group-by (:alias pt))
-                 (add-expression having (:alias pt) (:alias pc) :having)
-                 (add-order-by order-by)
-                 (add-limit limit)
-                 (add-offset offset)
-                 add-space
-                 flatten
-                 str/join)]]
-      (if-let [arguments (concat (gen-arguments where)
-                                 (gen-arguments having))]
-        (vec (concat qv arguments))
-        qv)))
+   :else
+   (throw (IllegalArgumentException.
+           "Invalid value for :table key"))))
 
-(defn sql-insert
-  "Given a command map return the insert sql code"
-  [{:keys [table columns data]}]
-  (let [c (count columns)]
-    (concat [(str "INSERT INTO " (name table) " ("
-                  (str/join ", "(map name columns)) ") VALUES ("
-                  (str/join ", " (repeat c "?")) ")")]
-            data)))
+(defn- sql-select
+  "Given a database and a select command map, returns a select query
+  vector."
+  [db cm]
+  (let [q (str "SELECT "
+               (if (:modifier cm) (str (add-modifier db (:modifier cm)) " "))
+               (column-string db (:column cm))
+               " FROM "
+               (table-string db (:table cm))
+               (add-join db (:join cm))
+               (add-expression (:where cm) :where db)
+               (add-group-by db (:group cm))
+               (add-expression (:having cm) :having db)
+               (add-order-by db (:order cm))
+               (add-limit db (:limit cm))
+               (add-offset db (:offset cm)))
+        a (concat (column-args (:column cm)) (table-args (:table cm))
+                  (join-args (:join cm)) (arguments (:where cm))
+                  (arguments (:having cm)))]
+    (into [q] a)))
+
+(defn- sql-delete
+  "Given a database and a delete command map, returns a delete
+  query vector."
+  [db {:keys [table where limit]}]
+  (into [(str "DELETE FROM " (identifier->str db table)
+              (add-expression where :where db)
+              (add-limit db limit))]
+        (arguments where)))
+
+(defn- sql-update
+  "Given a database and a update command map, returns a update
+  query vector."
+  [db {:keys [table where set]}]
+  (into [(str "UPDATE " (table-string db table)
+              (set-expression db set)
+              (add-expression where :where db))]
+        (concat (arguments set) (arguments where))))
 
 (defn sql-gen
-  "Given a command map return the sql code."
+  "Given a database and a command map return the sql vector."
   [db cm]
-  (case (:command cm)
-    :select
-    (sql-select cm)
+  (let [command (:command cm)
+        cm (process-subselects db (assoc cm :command nil))
+        cm (assoc cm :command command)]
+    (case (:command cm)
+      :select (sql-select db cm)
 
-    :insert
-    (sql-insert cm)
+      :insert (sql-insert db cm)
 
-    :drop-table
-    (sql-drop (:table cm) (:opts cm))
+      :delete (sql-delete db cm)
 
-    :create-table
-    (sql-create (:table cm) (:columns cm) (:opts cm))
+      :update (sql-update db cm)
 
-    (throw (IllegalArgumentException. "Incorrect :command value format."))))
+      :drop (sql-drop db cm)
+
+      :create (sql-create db cm)
+
+      (throw (IllegalArgumentException. "Incorrect :command value format.")))))
 
 (defn sql-exec!
-  "Given a database, a command map and a connection map, execute the
+  "Given a database, a connection map and a command map, execute the
   command."
   [db c cm]
   (case (:command cm)
     :select
     (jdbc/query c (sql-gen db cm))
 
-    (jdbc/execute! c (sql-gen db cm))))
-
-(defn select
-  "Given an entity returns a select query for the entity."
-  [e]
-  {:command :select
-   :modifier nil
-   :target e
-   :where nil
-   :group-by nil
-   :having nil
-   :offset nil
-   :limit nil})
+    (if (and (= :insert (:command cm))
+             (= :not-sure db))
+      (apply jdbc/insert! c (:table cm) (:column cm) (:values cm))
+      (jdbc/execute! c (sql-gen db cm)))))

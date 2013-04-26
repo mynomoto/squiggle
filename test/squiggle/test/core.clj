@@ -2,6 +2,170 @@
   (:use clojure.test
         squiggle.core))
 
+(defmacro with-private-fns [[ns fns] & tests]
+  "Refers private fns from ns and runs tests in context."
+  `(let ~(reduce #(conj %1 %2 `(ns-resolve '~ns '~%2)) [] fns)
+     ~@tests))
+
+(with-private-fns [squiggle.core
+                   [add-modifier table-string ct-columns table-alias
+                    pre-process-exp* sanitize* arguments add-columns*
+                    remove-literal-mark* column-string fix-in-vector*
+                    parentesis* add-join join-args]]
+  (deftest private-functions
+    (testing "add-modifier"
+      (is (= "DISTINCT" (add-modifier :h2 :distinct)))
+      (is (= "TOP 10" (add-modifier :h2 {:top 10})))
+      (is (= "DISTINCT ON (\"username\", \"role\")" (add-modifier :h2 [{:distinct-on [:username :role]} ])))
+      (is (= "TOP 10 DISTINCT" (add-modifier :h2 [{:top 10} :distinct]))))
+
+    (testing "table-string"
+      (is (= "\"user\"" (table-string :h2 :user)))
+      (is (= "\"user\" AS \"u\"" (table-string :h2 {:user :u})))
+      (is (= "\"user\" AS \"u\"" (table-string :h2 [{:user :u}])))
+      (is (= "\"user\" AS \"u\", \"email\"" (table-string :h2 [{:user :u} :email])))
+      (is (= "\"user\" AS \"u\", \"email\"" (table-string :h2 [{:user :u} :email])))
+      (is (= "UsEr AS \"u\", \"email\"" (table-string :h2 [{"UsEr" :u} :email]))))
+
+    (testing "column-string-for-create-columns"
+      (is (= (ct-columns :h2
+                         [[:id :identity [:primary-key]]
+                          ["LoGiN" "VARchar(30)" ["NOT NULL" :unique "primary key"]]
+                          [:username "varchar(100)" [:not-null :unique]]
+                          [:password "varchar(100)" [:not-null]]
+                          [:roles :varchar [:not-null]]
+                          [:created_at :timestamp]
+                          [:updated_at :timestamp]])
+             (str "\"id\" identity PRIMARY KEY, "
+                  "LoGiN VARchar(30) NOT NULL UNIQUE primary key, "
+                  "\"username\" varchar(100) NOT NULL UNIQUE, "
+                  "\"password\" varchar(100) NOT NULL, "
+                  "\"roles\" varchar NOT NULL, "
+                  "\"created_at\" timestamp, "
+                  "\"updated_at\" timestamp"))))
+
+    (testing "pre-process-exp"
+      (is (= ["!UserName" "!LiKe" "joh%"]
+             (pre-process-exp* ["!UserName" "!LiKe" "joh%"])))
+      (is (= [:id :> 1000]
+             (pre-process-exp* [:> :id 1000])))
+      (is (= [:username :like "joh%"]
+             (pre-process-exp* [:like :username "joh%"])))
+      (is (= [:id :between [:and 2 5]]
+             (pre-process-exp* [:between :id [:and 2 5]])))
+      (is (= [:id :in [2 5]]
+             (pre-process-exp* [:in :id [2 5]])))
+      ; AND
+      (is (= '([:like :username "joh%"])
+             (pre-process-exp* [:and [:like :username "joh%"]])))
+      (is (= [[:> :id 1000] :and [:like :username "joh%"]]
+             (pre-process-exp* [:and [:> :id 1000]
+                                [:like :username "joh%"]])))
+      (is (= [[:> :id 1000] :and [:like :username "joh%"]
+              :and [:= :id 300]]
+             (pre-process-exp* [:and [:> :id 1000]
+                                [:like :username "joh%"]
+                                [:= :id 300]])))
+      (is (not (vector? (pre-process-exp*
+                    [:and [:> :id 1000] [:like :username "joh%"]]))))
+      ; OR
+      (is (= '([:like :username "joh%"])
+             (pre-process-exp* [:or [:like :username "joh%"]])))
+      (is (= [[:> :id 1000] :or [:like :username "joh%"]]
+             (pre-process-exp* [:or [:> :id 1000]
+                                [:like :username "joh%"]])))
+      (is (= [[:> :id 1000] :or [:like :username "joh%"]
+              :or [:= :id 300]]
+             (pre-process-exp* [:or [:> :id 1000]
+                                [:like :username "joh%"]
+                                [:= :id 300]])))
+      (is (vector? (pre-process-exp*
+                    [:or [:> :id 1000] [:like :username "joh%"]]))))
+
+    #_(testing "table-alias"
+      (is (= {:user nil} (table-alias :user)))
+      (is (= {:user :u} (table-alias {:user :u})))
+      (is (= {:user :u} (table-alias [{:user :u}])))
+      (is (= {:user :u, :email nil} (table-alias [{:user :u} :email])))
+      (is (= {"UsEr" :u, :email nil} (table-alias [{"UsEr" :u} :email]))))
+
+    (testing "sanitize"
+      (is (= :user (sanitize* :user)))
+      (is (= "!escaped" (sanitize* "!escaped")))
+      (is (= [:a :b] (sanitize* [:a :b])))
+      (is (= "?" (sanitize* 10)))
+      (is (= "?" (sanitize* "not escaped"))))
+
+    (testing "arguments"
+      (is (= ["user" "u" "admin" "%us%" 1000 0 "joh%"]
+             (arguments [:and [:in :username ["user" "u" "admin"]]
+                         [:like :roles "%us%"]
+                         [:or [:< :id 1000] [:> :id 0]]
+                         ["!UserName" "!LiKe" "joh%"]]))))
+
+    (testing "add-columns"
+      (is (= "\"user\".\"username\"" (add-columns* :h2 :user.username)))
+      (is (= "\"username\"" (add-columns* :h2 :username)))
+      (is (= "\"info\".\"user\".\"username\"" (add-columns* :h2 :info.user.username)))
+      (is (= "COUNT(*)" (add-columns* :h2 [:count :*])))
+      (is (= "MAX(\"id\")" (add-columns* :h2 [:max :id]))))
+
+    (testing "remove-literal-mark*"
+      (is (= "user" (remove-literal-mark* "!user")))
+      (is (= "user" (remove-literal-mark* "user"))))
+
+    (testing "column-string"
+      (is (= "*" (column-string :db nil)))
+      (is (= "Us!#er" (column-string :db "Us!#er")))
+      (is (= "Us!#er, MAX(\"id\") AS \"max\", \"user\".\"username\" AS \"u\""
+             (column-string :h2 ["Us!#er" {[:max :id] :max} {:user.username :u}])))
+      (is (= "COUNT(*)" (column-string :h2 [:count :*]))))
+
+    (testing "fix-in-vector*"
+      (is (= ["user" "IN" ["?" ", " "?" ", " "?"]]
+             (fix-in-vector* ["user" "IN" ["?" "?" "?"]])))
+      (is (not (vector? (fix-in-vector* ["user" "IN" ["?" "?" "?"]]))))
+      (is (vector? (last (fix-in-vector* ["user" "IN" ["?" "?" "?"]]))))
+      (is (= ["user" "LIKE" ["?" "?" "?"]]
+             (fix-in-vector* ["user" "LIKE" ["?" "?" "?"]]))))
+
+    (testing "parentesis"
+      (is (= "(?, ?, ?)" (parentesis* ["?" ", " "?" ", " "?"])))
+      (is (= "(id < ? OR id > ?)" (parentesis* [["id" "<" "?"] "OR" ["id" ">" "?"]]))))
+
+    (testing "add-join"
+      (is (= "INNER JOIN \"email\" ON \"user\".\"id\" = \"email\".\"user_id\""
+             (add-join :h2 {:type :inner
+                            :table :email
+                            :on [:= :user.id :email.user_id]})))
+      (is (= (str "FULL JOIN friends ON user.id = friends.user_id "
+                  "LEFT JOIN email ON user.id = email.user_id"
+             (add-join :h2 [{:type :full
+                             :table :friends
+                             :on [:= :user.id :friends.user_id]}
+                            {:type :left
+                             :table :email
+                             :on [:= :user.id :email.user_id]}]))))
+
+    (testing "join-args"
+      (is (= nil
+             (join-args {:type :inner
+                         :table :email
+                         :on [:= :user.id :email.user_id]})))
+      (is (= nil
+             (join-args [{:type :full
+                             :table :friends
+                             :on [:= :user.id :friends.user_id]}
+                            {:type :left
+                             :table :email
+                             :on [:= :user.id :email.user_id]}])))
+      (is (= [2 3 9 7]
+             (join-args [{:type :full
+                             :table :friends
+                             :on [:in :user.id [2 3 9]]}
+                            {:type :left
+                             :table :email
+                             :on [:= :user.id 7]}])))))))
 (def ent {:table :user
           :default-select nil
           :pk nil
@@ -12,52 +176,49 @@
                                    :fk-jt nil}}})
 
 (def ct
-  {:command :create-table
+  {:command :create
    :table :user
-   :columns [[:identity :id [:primary-key]]]
-   :opts {:if-not-exists true
-          :temp false
-          :temporary false}})
+   :column [[:id :identity [:primary-key]]]
+   :opts [:if-not-exists]})
 
 (def sql (partial sql-gen :h2))
+(def sql-default (partial sql-gen :not-sure))
 
 (deftest test-create-table
   (testing "default"
-    (is (= (sql ct)
-           ["CREATE TABLE IF NOT EXISTS user (id identity PRIMARY KEY)"])))
+    (is (= ["CREATE TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
+           (sql ct))))
   (testing "without :if-not-exists"
-    (is (= (sql (assoc-in ct [:opts :if-not-exists] false))
-           ["CREATE TABLE user (id identity PRIMARY KEY)"])))
+    (is (= ["CREATE TABLE \"user\" (\"id\" identity PRIMARY KEY)"]
+           (sql (assoc ct :opts [])))))
   (testing "with :temp"
-    (is (= (sql (assoc-in ct [:opts :temp] true))
-           ["CREATE TEMPORARY TABLE IF NOT EXISTS user (id identity PRIMARY KEY)"])))
+    (is (= ["CREATE TEMPORARY TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
+           (sql (assoc ct :opts [:temp :if-not-exists])))))
   (testing "with :temporary"
-    (is (= (sql (assoc-in ct [:opts :temporary] true))
-           ["CREATE TEMPORARY TABLE IF NOT EXISTS user (id identity PRIMARY KEY)"]))))
+    (is (= ["CREATE TEMPORARY TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
+           (sql (assoc ct :opts [:temporary :if-not-exists]))))))
 
 (def dt
-  {:command :drop-table
-   :opts {:if-exists true
-          :cascade false
-          :restrict false}
+  {:command :drop
+   :opts [:if-exists]
    :table [:user]})
 
 (deftest test-drop-table
   (testing "default"
-    (is (= (sql dt)
-           ["DROP TABLE IF EXISTS user"])))
+    (is (= ["DROP TABLE IF EXISTS \"user\""]
+           (sql dt))))
   (testing "without :if-exists"
-    (is (= (sql (assoc-in dt [:opts :if-exists] false))
-           ["DROP TABLE user"])))
+    (is (= ["DROP TABLE \"user\""]
+           (sql (assoc dt :opts [])))))
   (testing "with :cascade"
-    (is (= (sql (assoc-in dt [:opts :cascade] true)))
-           ["DROP TABLE IF EXISTS user CASCADE"]))
+    (is (= ["DROP TABLE IF EXISTS \"user\" CASCADE"]
+           (sql (assoc dt :opts [:cascade :if-exists])))))
   (testing "with :restrict"
-    (is (= (sql (assoc-in dt [:opts :restrict] true))
-           ["DROP TABLE IF EXISTS user RESTRICT"])))
+    (is (= ["DROP TABLE IF EXISTS \"user\" RESTRICT"]
+           (sql (assoc dt :opts [:restrict :if-exists])))))
   (testing "with :restrict and :cascade"
     (is (thrown? IllegalArgumentException
-                 (sql (assoc dt :opts {:restrict true :cascade true}))))))
+                 (sql (assoc dt :opts [:restrict :cascade]))))))
 
 (def sl
   {:command :select
@@ -65,168 +226,273 @@
 
 (deftest test-select-query
   (testing "default"
-    (is (= (sql sl)
-           ["SELECT user.* FROM user"])))
+    (is (= ["SELECT * FROM \"user\""]
+           (sql sl))))
 
   (testing "with table alias"
-    (is (= (sql (assoc sl :table [[:user :u]]))
-           ["SELECT u.* FROM user AS u"])))
+    (is (= ["SELECT * FROM \"user\" AS \"u\""]
+           (sql (assoc sl :table [{:user :u}])))))
 
   (testing "with one column"
-    (is (= (sql (assoc sl :columns [:username]))
-           ["SELECT user.username FROM user"])))
+    (is (= ["SELECT \"username\" FROM \"user\""]
+           (sql (assoc sl :column [:username])))))
 
   (testing "with one column and a modifier"
-    (is (= (sql (assoc sl :columns [:username]
-                          :modifier :distinct))
-           ["SELECT distinct user.username FROM user"])))
+    (is (= ["SELECT DISTINCT \"username\" FROM \"user\""]
+           (sql (assoc sl :column [:username]
+                          :modifier :distinct)))))
 
   (testing "with one column, a modifier and a order by clause"
-    (is (= (sql (assoc sl :columns [:username]
-                          :modifier [:top 10]
-                          :order-by :username))
-           ["SELECT top 10 user.username FROM user ORDER BY username"])))
+    (is (= ["SELECT TOP 10 \"username\" FROM \"user\" ORDER BY \"username\""]
+           (sql (assoc sl :column [:username]
+                          :modifier {:top 10}
+                          :order :username)))))
 
   (testing "with one column, modifiers and a order by clause"
-    (is (= (sql (assoc sl :columns [:username]
-                          :modifier [:distinct [:top 10]]
-                          :order-by [:username]))
-           ["SELECT distinct top 10 user.username FROM user ORDER BY username"])))
+    (is (= ["SELECT DISTINCT TOP 10 \"username\" FROM \"user\" ORDER BY \"username\""]
+           (sql (assoc sl :column [:username]
+                          :modifier [:distinct {:top 10}]
+                          :order [:username])))))
 
   (testing "with columns"
-    (is (= (sql (assoc sl :columns [:username :role]))
-           ["SELECT user.username, user.role FROM user"])))
+    (is (= ["SELECT \"username\", \"roles\" FROM \"user\""]
+           (sql (assoc sl :column [:username :roles])))))
 
   (testing "with functions as columns"
-    (is (= (sql (assoc sl :columns [[["count(*)"] :count]]))
-           ["SELECT count(*) AS count FROM user"])))
+    (is (= ["SELECT count(*) AS \"count\" FROM \"user\""]
+           (sql (assoc sl :column [{"count(*)" :count}])))))
 
   (testing "with functions keywords as columns"
-    (is (= (sql (assoc sl :columns [[[:count :*] :count]]))
-           ["SELECT COUNT(*) AS count FROM user"])))
+    (is (= ["SELECT COUNT(*) AS \"count\" FROM \"user\""]
+           (sql (assoc sl :column [{[:count :*] :count}])))))
 
   (testing "with one column alias"
-    (is (= (sql (assoc sl :columns [[:username :login]]))
-           ["SELECT user.username AS login FROM user"])))
+    (is (= ["SELECT \"username\" AS \"login\" FROM \"user\""]
+           (sql (assoc sl :column [{:username :login}])))))
 
   (testing "with columns aliases"
-    (is (= (sql (assoc sl :columns [[:username :login] [:role :perfil]]))
-           ["SELECT user.username AS login, user.role AS perfil FROM user"])))
+    (is (= ["SELECT \"username\" AS \"login\", \"roles\" AS \"perfil\" FROM \"user\""]
+           (sql (assoc sl :column [{:username :login} {:roles :perfil}])))))
 
   (testing "with table alias and columns"
-    (is (= (sql (assoc sl :table [[:user :u]] :columns [:username :role]))
-           ["SELECT u.username, u.role FROM user AS u"])))
+    (is (= ["SELECT \"username\", \"roles\" FROM \"user\" AS \"u\""]
+           (sql (assoc sl :table [{:user :u}] :column [:username :roles])))))
 
   (testing "with table and columns aliases"
-    (is (= (sql (assoc sl :table [[:user :u]]
-                          :columns [[:username :login] [:role :perfil]]))
-           ["SELECT u.username AS login, u.role AS perfil FROM user AS u"])))
+    (is (= ["SELECT \"username\" AS \"login\", \"roles\" AS \"perfil\" FROM \"user\" AS \"u\""]
+           (sql (assoc sl :table [{:user :u}]
+                          :column [{:username :login} {:roles :perfil}])))))
 
   (testing "with several tables and columns"
-    (is (= (sql (assoc sl :table [[:user :u] [:email :e] :address]
-                          :columns [:user.username :user.role
-                                    :email.title :address.zip]))
-           [(str "SELECT u.username, u.role, e.title, address.zip "
-                 "FROM user AS u, email AS e, address")])))
+    (is (= [(str "SELECT \"u\".\"username\", \"u\".\"roles\", \"e\".\"title\", \"address\".\"zip\" "
+                 "FROM \"user\" AS \"u\", \"email\" AS \"e\", \"address\"")]
+           (sql (assoc sl :table [{:user :u} {:email :e} :address]
+                          :column [:u.username :u.roles
+                                    :e.title :address.zip])))))
 
   (testing "with several tables and columns with alias"
-    (is (= (sql (assoc sl :table [[:user :u] [:email :e] :address]
-                          :columns [[:user.username :login] :user.role
-                                    :email.title [:address.zip :code]]))
-           [(str "SELECT u.username AS login, u.role, e.title, "
-                 "address.zip AS code "
-                 "FROM user AS u, email AS e, address")])))
+    (is (= [(str "SELECT \"u\".\"username\" AS \"login\", \"u\".\"roles\", \"e\".\"title\", "
+                 "\"address\".\"zip\" AS \"code\" "
+                 "FROM \"user\" AS \"u\", \"email\" AS \"e\", \"address\"")]
+           (sql (assoc sl :table [{:user :u} {:email :e} :address]
+                          :column [{:u.username :login} :u.roles
+                                    :e.title {:address.zip :code}])))))
 
   (testing "with a simple where clause"
-    (is (= (sql (assoc sl :where [:and [:= :username "user"]]))
-           [(str "SELECT user.* FROM user "
-                 "WHERE user.username = ?")
-            "user"])))
+    (is (= [(str "SELECT * FROM \"user\" "
+                 "WHERE \"username\" = ?")
+            "user"]
+           (sql (assoc sl :where [:and [:= :username "user"]])))))
 
   (testing "with a simple where clause and aliases"
-    (is (= (sql (assoc sl :where [:and [:= :username "user"]]
-                          :table [[:user :u]]
-                          :columns [[:username :login]]))
-           [(str "SELECT u.username AS login FROM user AS u "
-                 "WHERE u.username = ?")
-            "user"])))
+    (is (= [(str "SELECT \"u\".\"username\" AS \"login\" FROM \"user\" AS \"u\" "
+                 "WHERE \"username\" = ?")
+            "user"]
+           (sql (assoc sl :where [:and [:= :username "user"]]
+                          :table [{:user :u}]
+                          :column [{:u.username :login}])))))
 
   (testing "replaces column alias with columns in a where clause"
-    (is (= (sql (assoc sl :where [:and [:= :login "user"]]
-                          :table [[:user :u]]
-                          :columns [[:username :login]]))
-           [(str "SELECT u.username AS login FROM user AS u "
-                 "WHERE u.username = ?")
-            "user"])))
+    (is (= [(str "SELECT \"username\" AS \"login\" FROM \"user\" AS \"u\" "
+                 "WHERE \"username\" = ?")
+            "user"]
+           (sql (assoc sl :where [:and [:= :username "user"]]
+                          :table [{:user :u}]
+                          :column [{:username :login}])))))
 
   (testing "with a complex where clause"
-    (is (= (sql (assoc sl :where [:and [:in :username ["user" "u" "admin"]]
+    (is (= [(str "SELECT * FROM \"user\" "
+                 "WHERE \"username\" IN (?, ?, ?) AND "
+                 "\"roles\" LIKE ? AND (\"id\" < ? OR \"id\" > ?)")
+            "user" "u" "admin" "%us%" 1000 0]
+           (sql (assoc sl :where [:and [:in :username ["user" "u" "admin"]]
                                        [:like :roles "%us%"]
                                        [:or [:< :id 1000]
-                                            [:> :id 0]]]))
-           [(str "SELECT user.* FROM user "
-                 "WHERE user.username IN ( ? ,  ? ,  ? ) AND "
-                 "user.roles LIKE ? AND ( user.id < ? OR user.id > ? )")
-            "user" "u" "admin" "%us%" 1000 0])))
+                                            [:> :id 0]]])))))
 
   (testing "with a group by clause and an aggregator"
-    (is (= (sql (assoc sl :columns [[[:count :*] :count]]
-                          :group-by [:role]))
-           ["SELECT COUNT(*) AS count FROM user GROUP BY user.role"])))
+    (is (= ["SELECT COUNT(*) AS \"count\" FROM \"user\" GROUP BY \"roles\""]
+           (sql (assoc sl :column [{[:count :*] :count}]
+                          :group [:roles])))))
 
   (testing "with a group by clause, an aggregator and a having clause"
-    (is (= (sql (assoc sl :columns [[[:count :*] :count]]
+    (is (= ["SELECT COUNT(*) AS \"count\" FROM \"user\" GROUP BY \"roles\" HAVING COUNT(*) > ?" 2]
+           (sql (assoc sl :column [{[:count :*] :count}]
                           :having [:> [:count :*] 2]
-                          :group-by [:role]))
-           ["SELECT COUNT(*) AS count FROM user GROUP BY user.role HAVING COUNT(*) > ?" 2])))
+                          :group [:roles])))))
 
   (testing "with a group by clause, an aggregator and a having clause literal"
-    (is (= (sql (assoc sl :columns [[[:count :*] :count]]
+    (is (= ["SELECT COUNT(*) AS \"count\" FROM \"user\" GROUP BY \"roles\" HAVING count(*) > ?" 2]
+           (sql (assoc sl :column [{[:count :*] :count}]
                           :having [:> "!count(*)" 2]
-                          :group-by [:role]))
-           ["SELECT COUNT(*) AS count FROM user GROUP BY user.role HAVING count(*) > ?" 2])))
+                          :group [:roles])))))
 
   (testing "simple limit clause"
-    (is (= (sql (assoc sl :limit 10))
-           ["SELECT user.* FROM user LIMIT 10"])))
+    (is (= ["SELECT * FROM \"user\" LIMIT 10"]
+           (sql (assoc sl :limit 10)))))
 
   (testing "simple offset clause"
-    (is (= (sql (assoc sl :offset 10))
-           ["SELECT user.* FROM user OFFSET 10"])))
+    (is (= ["SELECT * FROM \"user\" OFFSET 10"]
+           (sql (assoc sl :offset 10)))))
   )
 
 (def ins
   {:command :insert
    :table :user
-   :columns [:username :password :role]
-   :data [["m" "mistery" "user"]
-          ["a" "passwd" "admin"]]})
+   :column [:username :password :email :roles]
+   :values [["m" "mistery" "user@user.com" "user"]
+            ["a" "passwd" "admin@admin.com" "admin"]]})
+
+(def ins-subselect
+  {:command :insert
+   :table :user
+   :select {:command :select
+            :column [:id :username :status]
+            :table :old_user
+            :where [:= :status "active"]}})
 
 (deftest insert
+  (testing "h2"
+    (is (= [(str "INSERT INTO \"user\" (\"username\", \"password\", \"email\", \"roles\") "
+                 "VALUES (?, ?, ?, ?), (?, ?, ?, ?)") "m" "mistery"
+                 "user@user.com" "user" "a" "passwd" "admin@admin.com"
+                 "admin"]
+           (sql ins))))
   (testing "default"
-    (is (= (sql ins)
-           ["INSERT INTO user (username, password, role) VALUES (?, ?, ?)" ["m" "mistery" "user"] ["a" "passwd" "admin"]]))))
+    (is (= ["INSERT INTO \"user\" (\"username\", \"password\", \"email\", \"roles\") VALUES (?, ?, ?, ?)"
+            ["m" "mistery" "user@user.com" "user"] ["a" "passwd" "admin@admin.com" "admin"]]
+           (sql-default ins))))
+  (testing "subselect"
+    (is (= ["INSERT INTO \"user\" SELECT \"id\", \"username\", \"status\" FROM \"old_user\" WHERE \"status\" = ?" "active"]
+           (sql ins-subselect)))))
 
-(defmacro with-private-fns [[ns fns] & tests]
-  "Refers private fns from ns and runs tests in context."
-  `(let ~(reduce #(conj %1 %2 `(ns-resolve '~ns '~%2)) [] fns)
-     ~@tests))
+(def x {:table [:user {:email :e}]
+        :column [{"count(*)" :count}]
+        :where [:and [:like :email.title "%error%"] [:< :user.id 7]]
+        :group ["user.roles" :email.title]
+        :having [:> [:count :*] 1]
+        :limit 4
+        :offset 10
+        :order :username})
 
-(with-private-fns [squiggle.core [ct-columns]]
-  (deftest private-functions
-    (testing "string-to-create-columns"
-      (is (= (ct-columns [[:identity :id [:primary-key]]
-                          ["varchar(100)" :username [:not-null :unique]]
-                          ["varchar(100)" :password [:not-null]]
-                          [:varchar :roles [:not-null]]
-                          [:timestamp :created_at]
-                          [:timestamp :updated_at]])
-             (str "id identity PRIMARY KEY, "
-                  "username varchar(100) NOT NULL UNIQUE, "
-                  "password varchar(100) NOT NULL, "
-                  "roles varchar NOT NULL, "
-                  "created_at timestamp, "
-                  "updated_at timestamp"))))))
+(def subselect-where
+  {:command :select
+   :table :user
+   :column :username
+   :where [:and [:= :roles "admin"]
+                [:in :username {:command :select
+                                :table :billing
+                                :column :username
+                                :where [:like :status "%paid%"]}]]})
+
+(def subselect-column
+  {:command :select
+   :table :user
+   :column [:user.username
+            :user.friends
+            {:command :select
+                      :table :friendship
+                      :column [:count :*]
+                      :where [:and [:= :user.username
+                                       :friendship.username]
+                                   [:= :friendship.status
+                                       "active"]]}]
+   :where [:= :user.roles "admin"]})
+
+(def subselect-table
+  {:command :select
+   :table {{:command :select
+            :table :user
+            :column [:roles {[:count :*] :cnt}]
+            :group :roles
+            :having [:> [:count :*] 2]} :summary}
+   :where [:= :roles "admin"]})
+
+(deftest test-sub-select-query
+  (testing "simple where case"
+    (is (= [(str "SELECT \"username\" FROM \"user\" WHERE \"roles\" = ? AND "
+                 "\"username\" IN (SELECT \"username\" FROM \"billing\" WHERE "
+                 "\"status\" LIKE ?)") "admin" "%paid%"]
+           (sql subselect-where))))
+  (testing "simple column case"
+    (is (= [(str "SELECT \"user\".\"username\", \"user\".\"friends\", "
+                 "(SELECT COUNT(*) FROM \"friendship\" WHERE \"user\".\"username\" "
+                 "= \"friendship\".\"username\" AND \"friendship\".\"status\" = ?) FROM \"user\" "
+                 "WHERE \"user\".\"roles\" = ?") "active" "admin"]
+           (sql subselect-column))))
+  (testing "simple table case"
+    (is (= [(str "SELECT * FROM (SELECT \"roles\", COUNT(*) AS \"cnt\" FROM \"user\" "
+                 "GROUP BY \"roles\" HAVING COUNT(*) > ?) AS \"summary\" WHERE "
+                 "\"roles\" = ?") 2 "admin"]
+           (sql subselect-table)))))
+
+(def del
+  {:command :delete
+   :table :user
+   :where [:= :id 2]})
+
+(def del-select
+  {:command :delete
+   :table :user
+   :where [:in :id {:command :select
+                    :table :old_user
+                    :column :id}]})
+
+(deftest test-delete
+  (testing "simple case"
+    (is (= ["DELETE FROM \"user\" WHERE \"id\" = ?" 2]
+           (sql del))))
+  (testing "simple case with subselect"
+    (is (= ["DELETE FROM \"user\" WHERE \"id\" IN (SELECT \"id\" FROM \"old_user\")"]
+           (sql del-select)))))
+
+(def up
+  {:command :update
+   :table :user
+   :set [[:= :username "user1000"]
+         [:= :role "admin"]]
+   :where [:= :id 1]})
+
+(def up-subselect
+  {:command :update
+   :table {:user :u}
+   :set [:= :status {:command :select
+                     :column :status
+                     :table {:old_user :ou}
+                     :where [:= :u.id :ou.id]}]
+   :where [:in :u.id {:command :select
+                      :column :id
+                      :table :old_user}]})
+
+(deftest test-update
+  (testing "simple case"
+    (is (= ["UPDATE \"user\" SET \"username\" = ?, \"role\" = ? WHERE \"id\" = ?" "user1000" "admin" 1]
+           (sql up))))
+  (testing "subselect case"
+    (is (= [(str "UPDATE \"user\" AS \"u\" SET \"status\" = (SELECT \"status\" FROM "
+                 "\"old_user\" AS \"ou\" WHERE \"u\".\"id\" = \"ou\".\"id\") WHERE \"u\".\"id\" IN "
+                 "(SELECT \"id\" FROM \"old_user\")")]
+           (sql up-subselect)))))
 
 ;(query db (gen-select ent))
 ;(jdbc/execute! db ["insert into user set username = ?, password = ?, roles = ?" "mynomoto" "password" "user"])
