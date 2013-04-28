@@ -1,5 +1,4 @@
 (ns squiggle.test.h2
-  (:require [clojure.java.jdbc :as jdbc])
   (:use clojure.test
         squiggle.core))
 
@@ -30,12 +29,12 @@
 
 (def dt-email
   {:command :drop
-   :opts [:if-exists]
+   :options [:if-exists]
    :table :email})
 
 (def dt-user
   {:command :drop
-   :opts [:if-exists]
+   :options [:if-exists]
    :table :user})
 
 (def sl-user
@@ -48,7 +47,7 @@
    :column [:username :password :email :roles]
    :values [["m" "mistery" "user@user.com" "user"]
             ["a" "passwd" "admin@admin.com" "admin"]
-            ["s" "111111" "super@super.com" "super"]]})
+            ["s" "111111" "super@super.com" "user"]]})
 
 (def ins-email
   {:command :insert
@@ -73,10 +72,23 @@
 (def sl-inner-join
   (assoc-in sl-left-join [:join :type] :inner))
 
+(def sl-full-join
+  (assoc-in sl-left-join [:join :type] :full))
+
+(def sl-cross-join
+  (-> sl-left-join
+      (assoc-in [:join :type] :cross)
+      (assoc-in [:join :on] nil)))
+
+(def del-email
+  {:command :delete
+   :table :email
+   :where [:= :user_id 1]})
+
 (def del-user
   {:command :delete
    :table :user
-   :where [:= :username "m"]})
+   :where [:like :roles "%dm%"]})
 
 (defn- drop-tables [f]
   (sql! dt-user)
@@ -96,38 +108,54 @@
   (is (thrown? org.h2.jdbc.JdbcSQLException
                (sql! sl-user))))
 
-(deftest insert-users
-  (is (= [0] (sql! ct-user)))
-  (is (= [3] (sql! ins-user)))
-  (is (= [{:updated_at nil, :created_at nil, :roles "user",
-           :email "user@user.com", :password "mistery", :username "m", :id 1}
-          {:updated_at nil, :created_at nil, :roles "admin",
-           :email "admin@admin.com", :password "passwd", :username "a", :id 2}
-          {:updated_at nil, :created_at nil, :roles "super", :email "super@super.com",
-           :password "111111", :username "s", :id 3}]
-         (sql! sl-user)))
-  (is (= [0] (sql! ct-email)))
-  (is (= [4] (sql! ins-email)))
-  (is (= #{{:subject nil, :username "s"}
-           {:subject "Email to user m", :username "m"}
-           {:subject "Email2 to user m", :username "m"}
-           {:subject "Email to user a", :username "a"}}
-         (set (sql! sl-left-join))))
-  (is (= #{{:subject "Email to user m", :username "m"}
-           {:subject "Email2 to user m", :username "m"}
-           {:subject "Email to user a", :username "a"}
-           {:subject "Email to user 4" :username nil}}
-         (set (sql! sl-right-join))))
-  (is (= #{{:subject "Email to user m", :username "m"}
-           {:subject "Email2 to user m", :username "m"}
-           {:subject "Email to user a", :username "a"}}
-         (set (sql! sl-inner-join))))
-  (is (= [{(keyword "count(*)") 3}] (sql! (assoc sl-user :column [:count :*]))))
-  (is (= [{(keyword "max(\"id\")") 3}] (sql! (assoc sl-user :column [:max :id]))))
-  (is (= [1] (sql! del-user)))
-  (is (= #{{:updated_at nil, :created_at nil, :roles "admin",
-            :email "admin@admin.com", :password "passwd", :username "a", :id 2}
-           {:updated_at nil, :created_at nil, :roles "super", :email "super@super.com",
-            :password "111111", :username "s", :id 3}}
-         (set (sql! sl-user))))
-  )
+(deftest basic-operations
+  (testing "create table users"
+    (is (= [0] (sql! ct-user))))
+  (testing "insert users"
+    (is (= [3] (sql! ins-user))))
+  (testing "select all users"
+    (is (= [{:updated_at nil, :created_at nil, :roles "user",
+             :email "user@user.com", :password "mistery", :username "m", :id 1}
+            {:updated_at nil, :created_at nil, :roles "admin",
+             :email "admin@admin.com", :password "passwd", :username "a", :id 2}
+            {:updated_at nil, :created_at nil, :roles "user", :email "super@super.com",
+             :password "111111", :username "s", :id 3}]
+              (sql! sl-user))))
+  (testing "create table email"
+    (is (= [0] (sql! ct-email))))
+  (testing "insert emails"
+    (is (= [4] (sql! ins-email))))
+  (testing "left join users email"
+    (is (= #{{:subject nil, :username "s"}
+             {:subject "Email to user m", :username "m"}
+             {:subject "Email2 to user m", :username "m"}
+             {:subject "Email to user a", :username "a"}}
+              (set (sql! sl-left-join)))))
+  (testing "right join users email"
+    (is (= #{{:subject "Email to user m", :username "m"}
+             {:subject "Email2 to user m", :username "m"}
+             {:subject "Email to user a", :username "a"}
+             {:subject "Email to user 4" :username nil}}
+              (set (sql! sl-right-join)))))
+  (testing "inner join users email"
+    (is (= #{{:subject "Email to user m", :username "m"}
+             {:subject "Email2 to user m", :username "m"}
+             {:subject "Email to user a", :username "a"}}
+              (set (sql! sl-inner-join)))))
+  (testing "count users"
+    (is (= [{(keyword "count(*)") 3}] (sql! (assoc sl-user :column [:count :*])))))
+  (testing "max users id"
+    (is (= [{(keyword "max(\"id\")") 3}] (sql! (assoc sl-user :column [:max :id])))))
+  (testing "delete user"
+    (is (= [1] (sql! del-user))))
+  (testing "delete emails"
+    (is (= [2] (sql! del-email))))
+  (testing "full join"
+    (is (thrown? org.h2.jdbc.JdbcSQLException
+               (sql! sl-full-join))))
+  (testing "cross join users email"
+    (is (= #{{:subject "Email to user 4", :username "s"}
+             {:subject "Email to user a", :username "m"}
+             {:subject "Email to user a", :username "s"}
+             {:subject "Email to user 4", :username "m"}}
+              (set (sql! sl-cross-join))))))

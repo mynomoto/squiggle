@@ -179,7 +179,7 @@
   {:command :create
    :table :user
    :column [[:id :identity [:primary-key]]]
-   :opts [:if-not-exists]})
+   :options [:if-not-exists]})
 
 (def sql (partial sql-gen :h2))
 (def sql-default (partial sql-gen :not-sure))
@@ -190,17 +190,17 @@
            (sql ct))))
   (testing "without :if-not-exists"
     (is (= ["CREATE TABLE \"user\" (\"id\" identity PRIMARY KEY)"]
-           (sql (assoc ct :opts [])))))
+           (sql (assoc ct :options [])))))
   (testing "with :temp"
-    (is (= ["CREATE TEMPORARY TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
-           (sql (assoc ct :opts [:temp :if-not-exists])))))
+    (is (= ["CREATE TEMP TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
+           (sql (assoc ct :options [:temp :if-not-exists])))))
   (testing "with :temporary"
     (is (= ["CREATE TEMPORARY TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
-           (sql (assoc ct :opts [:temporary :if-not-exists]))))))
+           (sql (assoc ct :options [:temporary :if-not-exists]))))))
 
 (def dt
   {:command :drop
-   :opts [:if-exists]
+   :options [:if-exists]
    :table [:user]})
 
 (deftest test-drop-table
@@ -209,16 +209,16 @@
            (sql dt))))
   (testing "without :if-exists"
     (is (= ["DROP TABLE \"user\""]
-           (sql (assoc dt :opts [])))))
+           (sql (assoc dt :options [])))))
   (testing "with :cascade"
     (is (= ["DROP TABLE IF EXISTS \"user\" CASCADE"]
-           (sql (assoc dt :opts [:cascade :if-exists])))))
+           (sql (assoc dt :options [:cascade :if-exists])))))
   (testing "with :restrict"
     (is (= ["DROP TABLE IF EXISTS \"user\" RESTRICT"]
-           (sql (assoc dt :opts [:restrict :if-exists])))))
+           (sql (assoc dt :options [:restrict :if-exists])))))
   (testing "with :restrict and :cascade"
     (is (thrown? IllegalArgumentException
-                 (sql (assoc dt :opts [:restrict :cascade]))))))
+                 (sql (assoc dt :options [:restrict :cascade]))))))
 
 (def sl
   {:command :select

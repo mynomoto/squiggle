@@ -19,12 +19,13 @@
 
 (defn- select-string?
   [f]
-  (when (and (string? f) (= "select" (str/lower-case (subs f 0 (min (count f) 6)))))
+  (when (and (string? f)
+             (= "select" (str/lower-case (subs f 0 (min (count f) 6)))))
     true))
 
 (defn- select-vector?
   [f]
-  (if (and (vector? f) (select-string? (first f)))
+  (when (and (vector? f) (select-string? (first f)))
     true))
 
 (defn- table-string
@@ -57,19 +58,19 @@
 
 (defn- sql-drop
   "Given a db and a command map generates a drop table sql code."
-  [db {:keys [table opts]}]
-  (let [opts (set opts)]
-    (if (and (:cascade opts)
-             (:restrict opts))
+  [db {:keys [table options]}]
+  (let [options (set options)]
+    (if (and (:cascade options)
+             (:restrict options))
       (throw (IllegalArgumentException.
               "Can't use both :cascade and :restrict at the same time."))
       [(str "DROP TABLE "
-            (if (:if-exists opts)
+            (if (:if-exists options)
               "IF EXISTS ")
             (table-string db table)
-            (if (:cascade opts)
+            (if (:cascade options)
               " CASCADE")
-            (if (:restrict opts)
+            (if (:restrict options)
               " RESTRICT"))])))
 
 (def ^{:private true
@@ -101,15 +102,40 @@
       (str (name type))
       (if options (str " " (convert-options options)))]))))
 
+(defn- pre-table-options
+  [db options]
+  (cond
+    (and (:memory options) (:cached options))
+    (throw (IllegalArgumentException.
+      (str "Incompatible options: :memory :cached."
+           "Chose only one.")))
+    (> (count (options #{:temp :temporary:global-temporary
+                         :local-temporary})) 1)
+    (throw (IllegalArgumentException.
+      (str "Incompatible options: :temp :temporary :global-temporary "
+           ":local-temporary. Chose only one.")))
+
+    :else
+    (str
+      (when (:memory options) "MEMORY ")
+      (when (:cached options) "CACHED ")
+      (when (:temporary options) "TEMPORARY ")
+      (when (:global-temporary options) "GLOBAL TEMPORARY ")
+      (when (:local-temporary options) "LOCAL TEMPORARY ")
+      (when (:temp options) "TEMP "))))
+
+(defn- post-table-options
+  [db options]
+  (if (:if-not-exists options) "IF NOT EXISTS "))
+
 (defn- sql-create
   "Given a db and a command map generates a create table sql code."
-  [db {:keys [table column opts]}]
-  (let [opts (set opts)]
+  [db {:keys [table column options]}]
+  (let [options (set options)]
     [(str "CREATE "
-          (if (or (:temp opts)
-                  (:temporary opts)) "TEMPORARY ")
+          (pre-table-options db options)
           "TABLE "
-          (if (:if-not-exists opts) "IF NOT EXISTS ")
+          (post-table-options db options)
           (table-string db table)
           " (" (ct-columns db column) ")")]))
 
@@ -121,8 +147,8 @@
     (cond
       (and values select)
       (throw (IllegalArgumentException.
-               (str "Can't insert select and values at the same time with squiggle. "
-                    "Not sure if it's possible at all.")))
+               (str "Can't insert select and values at the same time "
+                    "with squiggle. Not sure if it's possible at all.")))
 
       select
       (into [(str "INSERT INTO " (identifier->str db table)
@@ -141,7 +167,9 @@
        :else
        (into
         [(str "INSERT INTO " (identifier->str db table) " ("
-              (str/join ", " (map (partial identifier->str db) column)) ") VALUES "
+              (str/join ", " (map (partial identifier->str db)
+                                  column))
+              ") VALUES "
               (str/join ", "
                         (repeat v (str "(" (str/join ", "
                                                      (repeat c "?")) ")"))))]
@@ -287,7 +315,8 @@
   (cond
    (keyword? f)
    (let [[cn & r] (reverse (str/split (name f) #"\."))
-         r (if r (str (str/join "." (map (partial identifier->str db) (reverse r)))
+         r (if r (str (str/join "." (map (partial identifier->str db)
+                                         (reverse r)))
                       "."))]
      (str r (identifier->str db cn)))
 
@@ -412,7 +441,9 @@
                      add-operators
                      remove-literal-mark
                      (add-columns db))
-        exp (if (coll? (first exp)) (map (partial str/join " ") exp) (str/join " " exp))]
+        exp (if (coll? (first exp))
+              (map (partial str/join " ") exp)
+              (str/join " " exp))]
     (str " SET " (if (coll? exp) (str/join ", " exp) exp))))
 
 (def ^{:private true
@@ -436,7 +467,9 @@
                 "A identifier map can only have one key value pair."))
         (let [[mname margs] (first m)
               margs (if (coll? margs)
-                      (str "(" (str/join ", " (map (partial add-columns* db) margs)) ")")
+                      (str "("
+                           (str/join ", " (map (partial add-columns* db) margs))
+                           ")")
                       margs)]
           (str (or (modifiers->str mname) (name mname)) " " margs)))
 
@@ -483,7 +516,7 @@
   {:left "LEFT JOIN"
    :right "RIGHT JOIN"
    :inner "INNER JOIN"
-   :outer "FULL JOIN"
+   :cross "CROSS JOIN"
    :full  "FULL JOIN"})
 
 (defn- single-join
