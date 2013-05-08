@@ -7,16 +7,6 @@
   [c]
   (not= 1 (count c)))
 
-(defn- identifier->str
-  "Given a db and a identifier converts the identifier to a string."
-  [db t]
-  (if (= (name t) "*")
-    "*"
-    (case db
-      :mysql (str "`" (name t) "`")
-      :mssql (str "[" (name t) "]")
-      (str "\"" (name t) "\""))))
-
 (defn- select-string?
   [f]
   (when (and (string? f)
@@ -27,6 +17,16 @@
   [f]
   (when (and (vector? f) (select-string? (first f)))
     true))
+
+(defn- identifier->str
+  "Given a db and a identifier converts the identifier to a string."
+  [db t]
+  (if (= (name t) "*")
+    "*"
+    (case db
+      :mysql (str "`" (name t) "`")
+      :mssql (str "[" (name t) "]")
+      (str "\"" (name t) "\""))))
 
 (defn- table-string
   "Given a db and a table or a vector of tables, returns a string for
@@ -644,6 +644,23 @@
               (add-expression where :where db))]
         (concat (arguments set) (arguments where))))
 
+(defn- sql-create-index
+  "Given a database and a create-index command map returns a create
+  index query vector."
+  [db {:keys [table column options name]}]
+  (let [options (set options)]
+    [(str "CREATE "
+         (when (:unique options) "UNIQUE ")
+         (when (:hash options) "HASH ")
+         "INDEX "
+         (when (:if-not-exists options) "IF NOT EXISTS ")
+         (when name (str (identifier->str name) " "))
+         "ON "
+         (table-string db table)
+         " ("
+         (column-string db column)
+         ")")]))
+
 (defn sql-gen
   "Given a database and a command map return the sql vector."
   [db cm]
@@ -663,7 +680,10 @@
 
       :create (sql-create db cm)
 
-      (throw (IllegalArgumentException. "Incorrect :command value format.")))))
+      :create-index (sql-create-index db cm)
+
+      (throw (IllegalArgumentException.
+              "Incorrect :command value format.")))))
 
 (defn sql-exec!
   "Given a database, a connection map and a command map, execute the
