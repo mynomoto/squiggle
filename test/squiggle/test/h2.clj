@@ -29,30 +29,30 @@
 
 (def dt-user
   {:command :drop
-   :options [:if-exists]
+   :option [:if-exists]
    :table :user})
 
 (def dt-email
   {:command :drop
-   :options [:if-exists]
+   :option [:if-exists]
    :table :email})
 
 (def ins-user
   {:command :insert
    :table :user
    :column [:username :password :email :roles]
-   :values [["m" "mistery" "user@user.com" "user"]
-            ["a" "passwd" "admin@admin.com" "admin"]
-            ["s" "111111" "super@super.com" "user"]]})
+   :value [["m" "mistery" "user@user.com" "user"]
+           ["a" "passwd" "admin@admin.com" "admin"]
+           ["s" "111111" "super@super.com" "user"]]})
 
 (def ins-email
   {:command :insert
    :table :email
    :column [:user_id :subject :content]
-   :values [[1 "Email to user m" "loren1"]
-            [2 "Email to user a" "loren2"]
-            [1 "Email2 to user m" "loren3"]
-            [4 "Email to user 4" "loren4"]]})
+   :value [[1 "Email to user m" "loren1"]
+           [2 "Email to user a" "loren2"]
+           [1 "Email2 to user m" "loren3"]
+           [4 "Email to user 4" "loren4"]]})
 
 (def sl-user
   {:command :select

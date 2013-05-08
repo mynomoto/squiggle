@@ -58,19 +58,19 @@
 
 (defn- sql-drop
   "Given a db and a command map generates a drop table sql code."
-  [db {:keys [table options]}]
-  (let [options (set options)]
-    (if (and (:cascade options)
-             (:restrict options))
+  [db {:keys [table option]}]
+  (let [option (set option)]
+    (if (and (:cascade option)
+             (:restrict option))
       (throw (IllegalArgumentException.
               "Can't use both :cascade and :restrict at the same time."))
       [(str "DROP TABLE "
-            (if (:if-exists options)
+            (if (:if-exists option)
               "IF EXISTS ")
             (table-string db table)
-            (if (:cascade options)
+            (if (:cascade option)
               " CASCADE")
-            (if (:restrict options)
+            (if (:restrict option)
               " RESTRICT"))])))
 
 (def ^{:private true
@@ -100,16 +100,16 @@
      (str/join
      [(if (string? cname) cname (identifier->str db cname)) " "
       (str (name type))
-      (if options (str " " (convert-options options)))]))))
+      (when  options (str " " (convert-options options)))]))))
 
 (defn- pre-table-options
-  [db options]
+  [db option]
   (cond
-    (and (:memory options) (:cached options))
+    (and (:memory option) (:cached option))
     (throw (IllegalArgumentException.
       (str "Incompatible options: :memory :cached."
            "Chose only one.")))
-    (> (count (options #{:temp :temporary:global-temporary
+    (> (count (option #{:temp :temporary:global-temporary
                          :local-temporary})) 1)
     (throw (IllegalArgumentException.
       (str "Incompatible options: :temp :temporary :global-temporary "
@@ -117,44 +117,44 @@
 
     :else
     (str
-      (when (:memory options) "MEMORY ")
-      (when (:cached options) "CACHED ")
-      (when (:temporary options) "TEMPORARY ")
-      (when (:global-temporary options) "GLOBAL TEMPORARY ")
-      (when (:local-temporary options) "LOCAL TEMPORARY ")
-      (when (:temp options) "TEMP "))))
+      (when (:memory option) "MEMORY ")
+      (when (:cached option) "CACHED ")
+      (when (:temporary option) "TEMPORARY ")
+      (when (:global-temporary option) "GLOBAL TEMPORARY ")
+      (when (:local-temporary option) "LOCAL TEMPORARY ")
+      (when (:temp option) "TEMP "))))
 
 (defn- post-table-options
-  [db options]
-  (if (:if-not-exists options) "IF NOT EXISTS "))
+  [db option]
+  (if (:if-not-exists option) "IF NOT EXISTS "))
 
 (defn- sql-create
   "Given a db and a command map generates a create table sql code."
-  [db {:keys [table column options]}]
-  (let [options (set options)]
+  [db {:keys [table column option]}]
+  (let [option (set option)]
     [(str "CREATE "
-          (pre-table-options db options)
+          (pre-table-options db option)
           "TABLE "
-          (post-table-options db options)
+          (post-table-options db option)
           (table-string db table)
           " (" (ct-columns db column) ")")]))
 
 (defn- sql-insert
   "Given a db and a command map return the insert sql code."
-  [db {:keys [table column values select]}]
+  [db {:keys [table column value select]}]
   (let [c (count column)
-        v (count values)]
+        v (count value)]
     (cond
-      (and values select)
+      (and value select)
       (throw (IllegalArgumentException.
-               (str "Can't insert select and values at the same time "
+               (str "Can't insert select and value at the same time "
                     "with squiggle. Not sure if it's possible at all.")))
 
       select
       (into [(str "INSERT INTO " (identifier->str db table)
                   (str " " (first select)))] (rest select))
 
-      values
+      value
       (cond
         (= :not-sure db)
         (into
@@ -162,7 +162,7 @@
                 (str/join ", " (map (partial identifier->str db) column))
                 ") VALUES ("
                 (str/join ", " (repeat c "?")) ")")]
-          values)
+          value)
 
        :else
        (into
@@ -173,7 +173,7 @@
               (str/join ", "
                         (repeat v (str "(" (str/join ", "
                                                      (repeat c "?")) ")"))))]
-        (flatten values))))))
+        (flatten value))))))
 
 (def ^{:private true
        :doc "Map of operators used to convert the operator keyword to a
@@ -647,13 +647,13 @@
 (defn- sql-create-index
   "Given a database and a create-index command map returns a create
   index query vector."
-  [db {:keys [table column options name]}]
-  (let [options (set options)]
+  [db {:keys [table column option name]}]
+  (let [option (set option)]
     [(str "CREATE "
-         (when (:unique options) "UNIQUE ")
-         (when (:hash options) "HASH ")
+         (when (:unique option) "UNIQUE ")
+         (when (:hash option) "HASH ")
          "INDEX "
-         (when (:if-not-exists options) "IF NOT EXISTS ")
+         (when (:if-not-exists option) "IF NOT EXISTS ")
          (when name (str (identifier->str name) " "))
          "ON "
          (table-string db table)
@@ -695,5 +695,5 @@
 
     (if (and (= :insert (:command cm))
              (= :not-sure db))
-      (apply jdbc/insert! c (:table cm) (:column cm) (:values cm))
+      (apply jdbc/insert! c (:table cm) (:column cm) (:value cm))
       (jdbc/execute! c (sql-gen db cm)))))

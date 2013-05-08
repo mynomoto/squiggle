@@ -179,7 +179,7 @@
   {:command :create
    :table :user
    :column [[:id :identity [:primary-key]]]
-   :options [:if-not-exists]})
+   :option [:if-not-exists]})
 
 (def sql (partial sql-gen :h2))
 (def sql-default (partial sql-gen :not-sure))
@@ -190,17 +190,17 @@
            (sql ct))))
   (testing "without :if-not-exists"
     (is (= ["CREATE TABLE \"user\" (\"id\" identity PRIMARY KEY)"]
-           (sql (assoc ct :options [])))))
+           (sql (assoc ct :option [])))))
   (testing "with :temp"
     (is (= ["CREATE TEMP TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
-           (sql (assoc ct :options [:temp :if-not-exists])))))
+           (sql (assoc ct :option [:temp :if-not-exists])))))
   (testing "with :temporary"
     (is (= ["CREATE TEMPORARY TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
-           (sql (assoc ct :options [:temporary :if-not-exists]))))))
+           (sql (assoc ct :option [:temporary :if-not-exists]))))))
 
 (def dt
   {:command :drop
-   :options [:if-exists]
+   :option [:if-exists]
    :table [:user]})
 
 (deftest test-drop-table
@@ -209,16 +209,16 @@
            (sql dt))))
   (testing "without :if-exists"
     (is (= ["DROP TABLE \"user\""]
-           (sql (assoc dt :options [])))))
+           (sql (assoc dt :option [])))))
   (testing "with :cascade"
     (is (= ["DROP TABLE IF EXISTS \"user\" CASCADE"]
-           (sql (assoc dt :options [:cascade :if-exists])))))
+           (sql (assoc dt :option [:cascade :if-exists])))))
   (testing "with :restrict"
     (is (= ["DROP TABLE IF EXISTS \"user\" RESTRICT"]
-           (sql (assoc dt :options [:restrict :if-exists])))))
+           (sql (assoc dt :option [:restrict :if-exists])))))
   (testing "with :restrict and :cascade"
     (is (thrown? IllegalArgumentException
-                 (sql (assoc dt :options [:restrict :cascade]))))))
+                 (sql (assoc dt :option [:restrict :cascade]))))))
 
 (def sl
   {:command :select
@@ -360,8 +360,8 @@
   {:command :insert
    :table :user
    :column [:username :password :email :roles]
-   :values [["m" "mistery" "user@user.com" "user"]
-            ["a" "passwd" "admin@admin.com" "admin"]]})
+   :value [["m" "mistery" "user@user.com" "user"]
+           ["a" "passwd" "admin@admin.com" "admin"]]})
 
 (def ins-subselect
   {:command :insert
