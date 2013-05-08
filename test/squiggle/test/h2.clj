@@ -27,19 +27,15 @@
             [:subject :varchar]
             [:content :text]]})
 
-(def dt-email
-  {:command :drop
-   :options [:if-exists]
-   :table :email})
-
 (def dt-user
   {:command :drop
    :options [:if-exists]
    :table :user})
 
-(def sl-user
-  {:command :select
-   :table :user})
+(def dt-email
+  {:command :drop
+   :options [:if-exists]
+   :table :email})
 
 (def ins-user
   {:command :insert
@@ -57,6 +53,10 @@
             [2 "Email to user a" "loren2"]
             [1 "Email2 to user m" "loren3"]
             [4 "Email to user 4" "loren4"]]})
+
+(def sl-user
+  {:command :select
+   :table :user})
 
 (def sl-left-join
   {:command :select
