@@ -56,10 +56,15 @@
    (throw (IllegalArgumentException.
            "Invalid value for :table key"))))
 
+(defn- option->set
+  [option]
+  (cond (keyword? option) #{option}
+        :else (set option)))
+
 (defn- sql-drop
   "Given a db and a command map generates a drop table sql code."
   [db {:keys [table option]}]
-  (let [option (set option)]
+  (let [option (option->set option)]
     (if (and (:cascade option)
              (:restrict option))
       (throw (IllegalArgumentException.
@@ -131,7 +136,7 @@
 (defn- sql-create
   "Given a db and a command map generates a create table sql code."
   [db {:keys [table column option]}]
-  (let [option (set option)]
+  (let [option (option->set option)]
     [(str "CREATE "
           (pre-table-options db option)
           "TABLE "
@@ -142,7 +147,8 @@
 (defn- sql-insert
   "Given a db and a command map return the insert sql code."
   [db {:keys [table column value select]}]
-  (let [c (count column)
+  (let [column (if (and column (not (coll? column))) [column] column)
+        c (count column)
         v (count value)]
     (cond
       (and value select)

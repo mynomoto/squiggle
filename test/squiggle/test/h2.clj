@@ -32,10 +32,10 @@
    :option [:if-exists]
    :table :user})
 
-(def dt-email
+(def dt-all
   {:command :drop
    :option [:if-exists]
-   :table :email})
+   :table [:email :user]})
 
 (def ins-user
   {:command :insert
@@ -91,8 +91,7 @@
    :where [:like :roles "%dm%"]})
 
 (defn- drop-tables [f]
-  (sql! dt-user)
-  (sql! dt-email)
+  (sql! dt-all)
   (f))
 
 (use-fixtures
