@@ -46,6 +46,7 @@ The maps are better explained in the SPEC.md file.
 ; this gives you the query vector. The first argument is
 ; the db and the second is the command map.
 (sq/sql-gen :h2 select-users)
+; ["SELECT * FROM \"user\""]
 
 ; and this executes the query vector. First arg is the db,
 ; second is the connection map and the third is the command
