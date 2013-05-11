@@ -1,35 +1,3 @@
-# Squiggle
-
-A Clojure library designed to transform maps in well crafted SQL code.
-It has a still unfinished [spec](https://github.com/mynomoto/squiggle/blob/master/SPEC).
-
-## Why???
-
-I like to see what I'm doing. It's just a plain map so it's harder for
-anything to hide from you.
-
-Squiggle uses the new clojure.java.jdbc API.
-
-So this is not Korma. It's more like honeysql but I only found that later
-and Squiggle already works for create and drop tables, insert, update and
-delete statements.
-
-And finally, the idea is have something that can generate sql optimized
-for each db. Now it only tested in H2 but should partially work with Derby,
-HSQL, Mysql, Postgresql. I will need help from people that use other dbs to
-add specific characteristics.
-
-## Usage
-
-Add to your dependencies `[squiggle "0.1.0-SNAPSHOT"]`.
-
-Require the namespace `squiggle.core`.
-
-There are only two public functions. `sql-gen` and `sql-exec!`.
-
-The maps are better explained in the SPEC.md file.
-
-```clojure
 (ns your.namespace
   (:require [squiggle.core :as sq]))
 
@@ -90,17 +58,3 @@ The maps are better explained in the SPEC.md file.
    :table :user
    :set [[:= :username "user1000"]]
    :where [:= :id 1]})
-```
-
-## TODO
-
-* Add limit to update
-* Add limit and top to delete
-* Add union, intersection, except queries
-* Add alter table and other alter and create commands
-
-## License
-
-Copyright © 2013 Marcelo Nomoto
-
-Licensed under the EPL, the same as Clojure (see the file epl-v10.html).

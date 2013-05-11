@@ -1,0 +1,53 @@
+This is not implemented yet and may never be. Just some ideas.
+## Entity Map
+A entity map is a Clojure map containing at least the following keys and
+corresponding values.
+
+:table
+  (Required, Keyword)
+  The name of the table representing the entity.
+
+:columns
+  (Optional, Vector)
+  A vector of columns maps representing the columns of the entity table.
+  Necessary to create the entity table.
+
+:default-select
+  (Optional, Select Map)
+  A map representing the default select query of the entity.
+
+:pk
+  (Optional, Keyword)
+  The name of the column that is the primary key of the table.
+
+:relationships
+  (Optional, Relationship Map)
+  Map containing a relationship keys and values. The key represents
+  the name of the entity and the value is a map of relationship
+  caracteristics.
+
+## Relationship Characteristics Map
+A relationship caracteristics map is a Clojure map containing at least the
+following keys and corresponding values.
+
+:type
+  (Required, Keyword)
+  The type of relationship. Must be one of :has-one, :has-many, :belongs-to
+  or :many-to-many.
+
+:fk
+  (Optional, Keyword)
+  The name of the column that is the foreign key of the another entity table.
+
+:join-table
+  (Optional, Keyword)
+  The name of the join table used in :many-to-many relationships.
+
+:pk-jt
+  (Optional, Keyword)
+  The name of the column that corresponds to the primary key in the join table.
+
+:fk-jt
+  (Optional, Keyword)
+  The name of the column that corresponds to the foreign key in the join table.
+
