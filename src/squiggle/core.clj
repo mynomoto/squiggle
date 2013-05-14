@@ -244,30 +244,24 @@
    (throw (IllegalArgumentException.
            "Invalid value for :table key"))))
 
-(defn- pre-process-exp*
-  "Given a form, return a pre-processed form in the correct order for
-  string generation."
+(defn- process-operators
+  "Given a where or having expression returns a pre-processed expression in
+  the correct order for string generation."
   [f]
   (if (vector? f)
     (let [[o & r] f]
        (if (operators->str o)
          (cond
           (infix-operators o) (let [[le re] r]
-                         (list le o re))
+                         (list (process-operators le) o (process-operators re)))
           (= :and o) (if (= 1 (count r))
-                         r
-                         (interpose o r))
+                         (process-operators (first r))
+                         (interpose o (map process-operators r)))
           (= :or o) (if (= 1 (count r))
-                         r
-                         (vec (interpose o r))))
-         f))
+                         (process-operators (first r))
+                         (vec (interpose o (map process-operators r)))))
+         (vec (map process-operators f))))
     f))
-
-(defn- pre-process-exp
-  "Given a where or having expression returns a pre-processed expression in
-  the correct order for string generation."
-  [ex]
-  (walk/postwalk pre-process-exp* ex))
 
 (defn- escaped-string?
   [f]
@@ -420,7 +414,7 @@
   string for the expression."
   [e ty db]
   (let [exp (some->> e
-                     pre-process-exp
+                     process-operators
                      sanitize
                      fix-subselects
                      add-operators
@@ -441,7 +435,7 @@
 (defn- set-expression
   [db e]
   (let [exp (some->> e
-                     pre-process-exp
+                     process-operators
                      sanitize
                      fix-subselects
                      add-operators

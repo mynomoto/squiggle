@@ -9,7 +9,7 @@
 
 (with-private-fns [squiggle.core
                    [add-modifier table-string ct-columns table-alias
-                    pre-process-exp* sanitize* arguments add-columns*
+                    process-operators sanitize* arguments add-columns*
                     remove-literal-mark* column-string fix-in-vector*
                     parentesis* add-join join-args]]
   (deftest private-functions
@@ -44,42 +44,42 @@
                   "\"created_at\" timestamp, "
                   "\"updated_at\" timestamp"))))
 
-    (testing "pre-process-exp"
+    (testing "process-operators"
       (is (= ["!UserName" "!LiKe" "joh%"]
-             (pre-process-exp* ["!UserName" "!LiKe" "joh%"])))
+             (process-operators ["!UserName" "!LiKe" "joh%"])))
       (is (= [:id :> 1000]
-             (pre-process-exp* [:> :id 1000])))
+             (process-operators [:> :id 1000])))
       (is (= [:username :like "joh%"]
-             (pre-process-exp* [:like :username "joh%"])))
-      (is (= [:id :between [:and 2 5]]
-             (pre-process-exp* [:between :id [:and 2 5]])))
+             (process-operators [:like :username "joh%"])))
+      (is (= [:id :between [2 :and 5]]
+             (process-operators [:between :id [:and 2 5]])))
       (is (= [:id :in [2 5]]
-             (pre-process-exp* [:in :id [2 5]])))
+             (process-operators [:in :id [2 5]])))
       ; AND
-      (is (= '([:like :username "joh%"])
-             (pre-process-exp* [:and [:like :username "joh%"]])))
-      (is (= [[:> :id 1000] :and [:like :username "joh%"]]
-             (pre-process-exp* [:and [:> :id 1000]
+      (is (= [:username :like "joh%"]
+             (process-operators [:and [:like :username "joh%"]])))
+      (is (= [[:id :> 1000] :and [:username :like "joh%"]]
+             (process-operators [:and [:> :id 1000]
                                 [:like :username "joh%"]])))
-      (is (= [[:> :id 1000] :and [:like :username "joh%"]
-              :and [:= :id 300]]
-             (pre-process-exp* [:and [:> :id 1000]
+      (is (= [[:id :> 1000] :and [:username :like "joh%"]
+              :and [:id := 300]]
+             (process-operators [:and [:> :id 1000]
                                 [:like :username "joh%"]
                                 [:= :id 300]])))
-      (is (not (vector? (pre-process-exp*
+      (is (not (vector? (process-operators
                     [:and [:> :id 1000] [:like :username "joh%"]]))))
       ; OR
-      (is (= '([:like :username "joh%"])
-             (pre-process-exp* [:or [:like :username "joh%"]])))
-      (is (= [[:> :id 1000] :or [:like :username "joh%"]]
-             (pre-process-exp* [:or [:> :id 1000]
+      (is (= [:username :like "joh%"]
+             (process-operators [:or [:like :username "joh%"]])))
+      (is (= [[:id :> 1000] :or [:username :like "joh%"]]
+             (process-operators [:or [:> :id 1000]
                                 [:like :username "joh%"]])))
-      (is (= [[:> :id 1000] :or [:like :username "joh%"]
-              :or [:= :id 300]]
-             (pre-process-exp* [:or [:> :id 1000]
+      (is (= [[:id :> 1000] :or [:username :like "joh%"]
+              :or [:id := 300]]
+             (process-operators [:or [:> :id 1000]
                                 [:like :username "joh%"]
                                 [:= :id 300]])))
-      (is (vector? (pre-process-exp*
+      (is (vector? (process-operators
                     [:or [:> :id 1000] [:like :username "joh%"]]))))
 
     #_(testing "table-alias"
