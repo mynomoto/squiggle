@@ -10,13 +10,13 @@
 (with-private-fns [squiggle.core
                    [add-modifier table-string ct-columns table-alias
                     process-operators sanitize* arguments add-columns*
-                    remove-literal-mark* column-string fix-in-vector*
-                    parentesis* add-join join-args]]
+                    remove-literal-mark* column-string fix-in-vector
+                    parentesis add-join join-args]]
   (deftest private-functions
     (testing "add-modifier"
       (is (= "DISTINCT" (add-modifier :h2 :distinct)))
       (is (= "TOP 10" (add-modifier :h2 {:top 10})))
-      (is (= "DISTINCT ON (\"username\", \"role\")" (add-modifier :h2 [{:distinct-on [:username :role]} ])))
+      (is (= "DISTINCT ON (\"username\", \"role\")" (add-modifier :h2 [{:distinct-on [:username :role]}])))
       (is (= "TOP 10 DISTINCT" (add-modifier :h2 [{:top 10} :distinct]))))
 
     (testing "table-string"
@@ -121,17 +121,17 @@
              (column-string :h2 ["Us!#er" {[:max :id] :max} {:user.username :u}])))
       (is (= "COUNT(*)" (column-string :h2 [:count :*]))))
 
-    (testing "fix-in-vector*"
+    (testing "fix-in-vector"
       (is (= ["user" "IN" ["?" ", " "?" ", " "?"]]
-             (fix-in-vector* ["user" "IN" ["?" "?" "?"]])))
-      (is (not (vector? (fix-in-vector* ["user" "IN" ["?" "?" "?"]]))))
-      (is (vector? (last (fix-in-vector* ["user" "IN" ["?" "?" "?"]]))))
+             (fix-in-vector ["user" "IN" ["?" "?" "?"]])))
+      (is (not (vector? (fix-in-vector ["user" "IN" ["?" "?" "?"]]))))
+      (is (vector? (last (fix-in-vector ["user" "IN" ["?" "?" "?"]]))))
       (is (= ["user" "LIKE" ["?" "?" "?"]]
-             (fix-in-vector* ["user" "LIKE" ["?" "?" "?"]]))))
+             (fix-in-vector ["user" "LIKE" ["?" "?" "?"]]))))
 
     (testing "parentesis"
-      (is (= "(?, ?, ?)" (parentesis* ["?" ", " "?" ", " "?"])))
-      (is (= "(id < ? OR id > ?)" (parentesis* [["id" "<" "?"] "OR" ["id" ">" "?"]]))))
+      (is (= "(?, ?, ?)" (parentesis ["?" ", " "?" ", " "?"])))
+      (is (= "(id < ? OR id > ?)" (parentesis [["id" "<" "?"] "OR" ["id" ">" "?"]]))))
 
     (testing "add-join"
       (is (= "INNER JOIN \"email\" ON \"user\".\"id\" = \"email\".\"user_id\""

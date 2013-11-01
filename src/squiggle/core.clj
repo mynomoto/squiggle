@@ -57,6 +57,7 @@
            "Invalid value for :table key"))))
 
 (defn- option->set
+  "Convert a keyword option or a vector of options to a set of options."
   [option]
   (cond (keyword? option) #{option}
         :else (set option)))
@@ -170,16 +171,16 @@
                 (str/join ", " (repeat c "?")) ")")]
           value)
 
-       :else
-       (into
-        [(str "INSERT INTO " (identifier->str db table) " ("
-              (str/join ", " (map (partial identifier->str db)
-                                  column))
-              ") VALUES "
-              (str/join ", "
-                        (repeat v (str "(" (str/join ", "
-                                                     (repeat c "?")) ")"))))]
-        (flatten value))))))
+        :else
+        (into
+          [(str "INSERT INTO " (identifier->str db table) " ("
+                (str/join ", " (map (partial identifier->str db)
+                                     column))
+                ") VALUES "
+                (str/join ", "
+                          (repeat v (str "(" (str/join ", "
+                                                       (repeat c "?")) ")"))))]
+          (flatten value))))))
 
 (def ^{:private true
        :doc "Map of operators used to convert the operator keyword to a
@@ -373,36 +374,29 @@
    (throw (IllegalArgumentException.
            "Invalid value for :column key"))))
 
-(defn- fix-in-vector*
+(defn- fix-in-vector
   "Given a list, if it is a \"IN\" list return the last list as a comma
    interposed vector."
   [f]
   (if (coll? f)
     (if (and (= (second f) "IN") (not (or (map? (last f)) (string? (last f)))))
       (list (first f) (second f) (vec (interpose ", " (last f))))
-      f)
-    f))
-
-(defn- fix-in-vector
-  "Given an expression fix all \"IN\" lists in this expression."
-  [ex]
-  (walk/postwalk fix-in-vector* ex))
-
-(defn- parentesis*
-  "Given a vector, returns a string of the vector contents enclosed in
-   parentesis."
-  [f]
-  (if (vector? f)
-    (if (every? string? f)
-      (str "(" (str/join f) ")")
-      (str "(" (str/join " " (flatten f)) ")"))
+      (if (vector? f)
+        (vec (map fix-in-vector f))
+        (map fix-in-vector f)))
     f))
 
 (defn- parentesis
-  "Given an expression, returns a new expression with strings enclosed in
-   parentesis replacing vectors."
-  [ex]
-  (walk/postwalk parentesis* ex))
+  "Given a vector, returns a string of the vector contents enclosed in
+   parentesis."
+  [f]
+  (if (coll? f)
+    (if (vector? f)
+      (if (every? string? f)
+        (str "(" (str/join f) ")")
+        (str "(" (str/join " " (flatten f)) ")"))
+      (map parentesis f))
+    f))
 
 (defn- add-space
   "Given an expression adds spaces between forms in the expression."
@@ -693,7 +687,12 @@
     :select
     (jdbc/query c (sql-gen db cm))
 
-    (if (and (= :insert (:command cm))
-             (= :not-sure db))
+    (cond
+      (and (= :insert (:command cm)) (= :not-sure db))
       (apply jdbc/insert! c (:table cm) (:column cm) (:value cm))
+
+      (and (= :update (:command cm)) (coll? (second (sql-gen db cm))))
+      (jdbc/execute! c (sql-gen db cm) {:multi? true})
+
+      :else
       (jdbc/execute! c (sql-gen db cm)))))
