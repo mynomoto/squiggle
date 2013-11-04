@@ -1,4 +1,4 @@
-(defproject squiggle "0.1.0-SNAPSHOT"
+(defproject squiggle "0.1.0"
   :description "Generates SQL from clojure maps."
   :url "https://github.com/mynomoto/squiggle"
   :license {:name "Eclipse Public License"

@@ -11,21 +11,23 @@
 (def ct-user
   {:command :create
    :table :user
-   :column [[:id :identity [:primary-key]]
-            [:username :varchar [:not-null :unique]]
-            [:password :varchar [:not-null]]
-            [:email :varchar [:not-null]]
-            [:roles :varchar [:not-null]]
-            [:created_at :timestamp]
-            [:updated_at :timestamp]]})
+   :column-schema
+     [[:id :identity [:primary-key]]
+      [:username :varchar [:not-null :unique]]
+      [:password :varchar [:not-null]]
+      [:email :varchar [:not-null]]
+      [:roles :varchar [:not-null]]
+      [:created_at :timestamp]
+      [:updated_at :timestamp]]})
 
 (def ct-email
   {:command :create
    :table :email
-   :column [[:id :identity [:primary-key]]
-            [:user_id :integer [:not-null]]
-            [:subject :varchar]
-            [:content :text]]})
+   :column-schema
+     [[:id :identity [:primary-key]]
+      [:user_id :integer [:not-null]]
+      [:subject :varchar]
+      [:content :text]]})
 
 (def dt-user
   {:command :drop

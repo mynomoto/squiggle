@@ -178,7 +178,7 @@
 (def ct
   {:command :create
    :table :user
-   :column [[:id :identity [:primary-key]]]
+   :column-schema [[:id :identity [:primary-key]]]
    :option [:if-not-exists]})
 
 (def sql (partial sql-gen :h2))
@@ -504,3 +504,4 @@
 ;(jdbc/query db ["SELECT TABLE_NAME, SQL FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'TABLE'"])
 ;(jdbc/query db ["SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'SYSTEM TABLE' "])
 ;(jdbc/query db ["SELECT * FROM INFORMATION_SCHEMA.CONSTRAINTS"])
+;(jdbc/query db ["SELECT * FROM INFORMATION_SCHEMA.INDEXES"])

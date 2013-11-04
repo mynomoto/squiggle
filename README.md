@@ -57,9 +57,9 @@ The maps are better explained in the SPEC.md file.
 (def create-user-table
   {:command :create
    :table :user
-   :column [[:id :identity :primary-key]
-            [:username :varchar :not-null]
-            [:password :varchar :not-null]]})
+   :column-schema [[:id :identity :primary-key]
+                   [:username :varchar :not-null]
+                   [:password :varchar :not-null]]})
 
 ; you can drop a table
 (def drop-user-table

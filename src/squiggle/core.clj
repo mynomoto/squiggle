@@ -136,14 +136,14 @@
 
 (defn- sql-create
   "Given a db and a command map generates a create table sql code."
-  [db {:keys [table column option]}]
+  [db {:keys [table column-schema option]}]
   (let [option (option->set option)]
     [(str "CREATE "
           (pre-table-options db option)
           "TABLE "
           (post-table-options db option)
           (table-string db table)
-          " (" (ct-columns db column) ")")]))
+          " (" (ct-columns db column-schema) ")")]))
 
 (defn- sql-insert
   "Given a db and a command map return the insert sql code."

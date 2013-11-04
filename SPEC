@@ -34,7 +34,7 @@ corresponding values.
   :memory
   [:if-not-exists :global-temporary]
 
-:column
+:column-schema
   (Required, Vector of column definitions)
   A column definition is a Clojure vector in the format
   [name type options]. E.g.:
@@ -58,7 +58,7 @@ corresponding values.
 Example map:
 {:command :create
  :table :user
- :column [[:id :identity [:primary-key]]]
+ :column-schema [[:id :identity [:primary-key]]]
  :option :if-not-exists}
 
 ### :command :drop
