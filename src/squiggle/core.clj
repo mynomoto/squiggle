@@ -641,14 +641,17 @@
 (defn- sql-create-index
   "Given a database and a create-index command map returns a create
   index query vector."
-  [db {:keys [table column option name]}]
-  (let [option (set option)]
+  [db {:keys [table index]}]
+  (for [[column option] index
+        :let [[column idx-name] (if (map? column) (first column) [column (str column "_idx")])
+              option (set option)]]
     [(str "CREATE "
          (when (:unique option) "UNIQUE ")
          (when (:hash option) "HASH ")
+         (when (:spatial option) "SPATIAL ")
          "INDEX "
          (when (:if-not-exists option) "IF NOT EXISTS ")
-         (when name (str (identifier->str name) " "))
+         (when idx-name (str (identifier->str db idx-name) " "))
          "ON "
          (table-string db table)
          " ("
@@ -687,6 +690,9 @@
     :select
     (jdbc/query c (sql-gen db cm))
 
+    :create-index
+    (map #(jdbc/execute! c %) (sql-gen db cm))
+
     (cond
       (and (= :insert (:command cm)) (= :not-sure db))
       (apply jdbc/insert! c (:table cm) (:column cm) (:value cm))
@@ -696,3 +702,14 @@
 
       :else
       (jdbc/execute! c (sql-gen db cm)))))
+
+(defn sql-transaction! [db c maps]
+  (jdbc/db-transaction [t c]
+    (doseq [m maps]
+      (sql-exec! db c m))))
+
+(defn sql-transaction [db c maps]
+  (jdbc/db-transaction [t c]
+    (doseq [m maps]
+      (sql-exec! db c m))
+    (jdbc/db-set-rollback-only! t)))
