@@ -4,7 +4,7 @@
 
 (def db {:classname   "org.h2.Driver"
          :subprotocol "h2"
-         :subname     "resources/db/test-squiggle-h2.db"})
+         :subname     "mem:h2db;DB_CLOSE_DELAY=-1"})
 
 (def sql! (partial sql-exec! :h2 db))
 
