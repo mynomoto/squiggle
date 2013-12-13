@@ -91,13 +91,13 @@
 
     (testing "sanitize"
       (is (= :user (sanitize* :user)))
-      (is (= "!escaped" (sanitize* "!escaped")))
+      (is (= "?" (sanitize* "!escaped")))
       (is (= [:a :b] (sanitize* [:a :b])))
       (is (= "?" (sanitize* 10)))
       (is (= "?" (sanitize* "not escaped"))))
 
     (testing "arguments"
-      (is (= ["user" "u" "admin" "%us%" 1000 0 "joh%"]
+      (is (= ["user" "u" "admin" "%us%" 1000 0 "!UserName" "!LiKe" "joh%"]
              (arguments [:and [:in :username ["user" "u" "admin"]]
                          [:like :roles "%us%"]
                          [:or [:< :id 1000] [:> :id 0]]
@@ -110,9 +110,9 @@
       (is (= "COUNT(*)" (add-columns* :h2 [:count :*])))
       (is (= "MAX(\"id\")" (add-columns* :h2 [:max :id]))))
 
-    (testing "remove-literal-mark*"
-      (is (= "user" (remove-literal-mark* "!user")))
-      (is (= "user" (remove-literal-mark* "user"))))
+;;     (testing "remove-literal-mark*"
+;;       (is (= "user" (remove-literal-mark* "!user")))
+;;       (is (= "user" (remove-literal-mark* "user"))))
 
     (testing "column-string"
       (is (= "*" (column-string :db nil)))
@@ -342,9 +342,9 @@
                           :group [:roles])))))
 
   (testing "with a group by clause, an aggregator and a having clause literal"
-    (is (= ["SELECT COUNT(*) AS \"count\" FROM \"user\" GROUP BY \"roles\" HAVING count(*) > ?" 2]
+    (is (= ["SELECT COUNT(*) AS \"count\" FROM \"user\" GROUP BY \"roles\" HAVING COUNT(*) > ?" 2]
            (sql (assoc sl :column [{[:count :*] :count}]
-                          :having [:> "!count(*)" 2]
+                          :having [:> [:count :*] 2]
                           :group [:roles])))))
 
   (testing "simple limit clause"

@@ -264,16 +264,11 @@
          (vec (map process-operators f))))
     f))
 
-(defn- escaped-string?
-  [f]
-  (when (and (string? f) (= (first f) \!))
-    true))
-
 (defn- sanitize*
   "Given a form, returns a string \"?\" if the form isn't a collection, a
   keyword or a escaped string."
   [f]
-  (if (or (coll? f) (keyword? f) (escaped-string? f) (select-string? f))
+  (if (or (coll? f) (keyword? f) #_(escaped-string? f) (select-string? f))
     f
     "?"))
 
@@ -286,7 +281,7 @@
 (defn- arguments
   "Given an expression returns a seq of all arguments"
   [ex]
-  (seq (remove #(when (or (escaped-string? %) (select-string? %)) true)
+  (seq (remove #(when (or #_(escaped-string? %) (select-string? %)) true)
                (remove keyword? (flatten ex)))))
 
 (defn- fix-subselects*
@@ -331,19 +326,6 @@
   strings replacing column keywords."
   [db ex]
   (walk/prewalk (partial add-columns* db) ex))
-
-(defn- remove-literal-mark*
-  "Given a string, if the string begins with \"!\" returns the string
-   without \"!\"."
-  [f]
-  (if (escaped-string? f)
-    (str/replace-first f #"^!" "")
-    f))
-
-(defn- remove-literal-mark
-  "Given an expression remove the literal marks of all strings."
-  [ex]
-  (walk/postwalk remove-literal-mark* ex))
 
 (defn- column-string
   "Given a db and a column, or vector of columns, return a string to
@@ -412,7 +394,6 @@
                      sanitize
                      fix-subselects
                      add-operators
-                     remove-literal-mark
                      fix-in-vector
                      (add-columns db)
                      parentesis
@@ -433,7 +414,6 @@
                      sanitize
                      fix-subselects
                      add-operators
-                     remove-literal-mark
                      (add-columns db))
         exp (if (coll? (first exp))
               (map (partial str/join " ") exp)
