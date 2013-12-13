@@ -658,6 +658,17 @@
          (column-string db column)
          ")")]))
 
+(defn- sql-drop-index
+  "Given a database and a drop-index command map returns a drop
+  index query vector."
+  [db {:keys [table index]}]
+  (for [[column option] index
+        :let [[column idx-name] (if (map? column) (first column) [column (str column "_idx")])
+              option (set option)]]
+    [(str "DROP  INDEX "
+         (when (:if-exists option) "IF EXISTS ")
+         (identifier->str db idx-name))]))
+
 (defn sql-gen
   "Given a database and a command map return the sql vector."
   [db cm]
@@ -679,6 +690,8 @@
 
       :create-index (sql-create-index db cm)
 
+      :drop-index (sql-drop-index db cm)
+
       (throw (IllegalArgumentException.
               "Incorrect :command value format.")))))
 
@@ -691,6 +704,9 @@
     (jdbc/query c (sql-gen db cm))
 
     :create-index
+    (map #(jdbc/execute! c %) (sql-gen db cm))
+
+    :drop-index
     (map #(jdbc/execute! c %) (sql-gen db cm))
 
     (cond
