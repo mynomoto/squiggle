@@ -268,7 +268,7 @@
   "Given a form, returns a string \"?\" if the form isn't a collection, a
   keyword or a escaped string."
   [f]
-  (if (or (coll? f) (keyword? f) #_(escaped-string? f) (select-string? f))
+  (if (or (coll? f) (keyword? f) (select-string? f))
     f
     "?"))
 
@@ -281,7 +281,7 @@
 (defn- arguments
   "Given an expression returns a seq of all arguments"
   [ex]
-  (seq (remove #(when (or #_(escaped-string? %) (select-string? %)) true)
+  (seq (remove select-string?
                (remove keyword? (flatten ex)))))
 
 (defn- fix-subselects*
@@ -700,12 +700,12 @@
       (jdbc/execute! c (sql-gen db cm)))))
 
 (defn sql-transaction! [db c maps]
-  (jdbc/db-transaction [t c]
+  (jdbc/with-db-transaction [t c]
     (doseq [m maps]
       (sql-exec! db c m))))
 
 (defn sql-transaction [db c maps]
-  (jdbc/db-transaction [t c]
+  (jdbc/with-db-transaction [t c]
     (doseq [m maps]
       (sql-exec! db c m))
     (jdbc/db-set-rollback-only! t)))
