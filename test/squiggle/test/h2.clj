@@ -1,12 +1,13 @@
 (ns squiggle.test.h2
-  (:use clojure.test
-        squiggle.core))
+  (:use clojure.test)
+  (:require [squiggle.core :as sq]
+            [squiggle.helpers :as h]))
 
 (def db {:classname   "org.h2.Driver"
          :subprotocol "h2"
          :subname     "mem:h2db;DB_CLOSE_DELAY=-1"})
 
-(def sql! (partial sql-exec! :h2 db))
+(def sql! (partial sq/sql! :h2 db))
 
 (def ct-user
   {:command :create

@@ -10,7 +10,7 @@
 (defn- select-string?
   [f]
   (when (and (string? f)
-             (= "select" (str/lower-case (subs f 0 (min (count f) 6)))))
+             (= "SELECT" (subs f 0 (min (count f) 6))))
     true))
 
 (defn- select-vector?
@@ -649,7 +649,7 @@
          (when (:if-exists option) "IF EXISTS ")
          (identifier->str db idx-name))]))
 
-(defn sql-gen
+(defn sql
   "Given a database and a command map return the sql vector."
   [db cm]
   (let [command (:command cm)
@@ -675,37 +675,37 @@
       (throw (IllegalArgumentException.
               "Incorrect :command value format.")))))
 
-(defn sql-exec!
+(defn sql!
   "Given a database, a connection map and a command map, execute the
   command."
   [db c cm]
   (case (:command cm)
     :select
-    (jdbc/query c (sql-gen db cm))
+    (jdbc/query c (sql db cm))
 
     :create-index
-    (map #(jdbc/execute! c %) (sql-gen db cm))
+    (map #(jdbc/execute! c %) (sql db cm))
 
     :drop-index
-    (map #(jdbc/execute! c %) (sql-gen db cm))
+    (map #(jdbc/execute! c %) (sql db cm))
 
     (cond
       (and (= :insert (:command cm)) (= :not-sure db))
       (apply jdbc/insert! c (:table cm) (:column cm) (:value cm))
 
-      (and (= :update (:command cm)) (coll? (second (sql-gen db cm))))
-      (jdbc/execute! c (sql-gen db cm) {:multi? true})
+      (and (= :update (:command cm)) (coll? (second (sql db cm))))
+      (jdbc/execute! c (sql db cm) {:multi? true})
 
       :else
-      (jdbc/execute! c (sql-gen db cm)))))
+      (jdbc/execute! c (sql db cm)))))
 
 (defn sql-transaction! [db c maps]
   (jdbc/with-db-transaction [t c]
     (doseq [m maps]
-      (sql-exec! db c m))))
+      (sql! db c m))))
 
 (defn sql-transaction [db c maps]
   (jdbc/with-db-transaction [t c]
     (doseq [m maps]
-      (sql-exec! db c m))
+      (sql! db c m))
     (jdbc/db-set-rollback-only! t)))

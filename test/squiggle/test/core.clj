@@ -1,6 +1,6 @@
 (ns squiggle.test.core
-  (:use clojure.test
-        squiggle.core))
+  (:use clojure.test)
+  (:require [squiggle.core :as sq]))
 
 (defmacro with-private-fns [[ns fns] & tests]
   "Refers private fns from ns and runs tests in context."
@@ -181,8 +181,8 @@
    :column-schema [[:id :identity [:primary-key]]]
    :option [:if-not-exists]})
 
-(def sql (partial sql-gen :h2))
-(def sql-default (partial sql-gen :not-sure))
+(def sql (partial sq/sql :h2))
+(def sql-default (partial sq/sql :not-sure))
 
 (deftest test-create-table
   (testing "default"
