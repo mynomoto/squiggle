@@ -3,14 +3,13 @@
   (:require [squiggle.core :as sq]
             [squiggle.helpers :as h]))
 
-(def db {:classname   "org.h2.Driver"
-         :subprotocol "h2"
+(def db {:subprotocol "h2"
          :subname     "mem:h2db;DB_CLOSE_DELAY=-1"})
 
 (def sql! (partial sq/sql! :h2 db))
 
 (def ct-user
-  {:command :create
+  {:command :create-table
    :table :user
    :column-schema
      [[:id :identity [:primary-key]]
@@ -22,7 +21,7 @@
       [:updated_at :timestamp]]})
 
 (def ct-email
-  {:command :create
+  {:command :create-table
    :table :email
    :column-schema
      [[:id :identity [:primary-key]]
@@ -31,12 +30,12 @@
       [:content :text]]})
 
 (def dt-user
-  {:command :drop
+  {:command :drop-table
    :option [:if-exists]
    :table :user})
 
 (def dt-all
-  {:command :drop
+  {:command :drop-table
    :option [:if-exists]
    :table [:email :user]})
 
@@ -143,7 +142,7 @@
     (is (= #{{:subject "Email to user m", :username "m"}
              {:subject "Email2 to user m", :username "m"}
              {:subject "Email to user a", :username "a"}}
-              (set (sql! sl-inner-join)))))
+           (set (sql! sl-inner-join)))))
   (testing "count users"
     (is (= [{(keyword "count(*)") 3}] (sql! (assoc sl-user :column [:count :*])))))
   (testing "max users id"

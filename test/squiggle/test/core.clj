@@ -176,7 +176,7 @@
                                    :fk-jt nil}}})
 
 (def ct
-  {:command :create
+  {:command :create-table
    :table :user
    :column-schema [[:id :identity [:primary-key]]]
    :option [:if-not-exists]})
@@ -199,7 +199,7 @@
            (sql (assoc ct :option [:temporary :if-not-exists]))))))
 
 (def dt
-  {:command :drop
+  {:command :drop-table
    :option [:if-exists]
    :table [:user]})
 

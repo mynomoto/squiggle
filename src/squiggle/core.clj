@@ -664,9 +664,9 @@
 
       :update (sql-update db cm)
 
-      :drop (sql-drop db cm)
+      :drop-table (sql-drop db cm)
 
-      :create (sql-create db cm)
+      :create-table (sql-create db cm)
 
       :create-index (sql-create-index db cm)
 
