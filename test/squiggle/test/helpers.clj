@@ -79,7 +79,7 @@
 (deftest basic-operations
   (testing "create-tables"
     (is (= [[0] [0] [0] [0] [0]] (map #(h/create-table sql! %) (vals schema))))
-    (is (empty? (:results (h/find-all sql! (:user schema))))))
+    (is (empty? (h/find-all sql! (:user schema)))))
   (testing "insert users"
     (is (= [[1] [1] [1]]
            (map #(h/put! sql! (:user schema) nil %)
@@ -116,21 +116,21 @@
     (is (= (h/find-ids sql! (:user schema) ["a" "b"])
            [{:username "a" :password "z"}
             {:username "b" :password "y"}]))
-    (is (= (:results (h/find-all sql! (:email schema)))
+    (is (= (h/find-all sql! (:email schema))
            [{:user "a" :subject "s1" :id 1}
             {:user "a" :subject "s2" :id 2}
             {:user "a" :subject "s3" :id 3}
             {:user "c" :subject "s4" :id 4}]))
-    (is (= (:results (h/find-like sql! (:email schema) "%1" :column :subject))
+    (is (= (h/find-like sql! (:email schema) "%1" :column :subject)
            [{:user "a" :subject "s1" :id 1}])))
   (testing "add count"
-    (is (= (:count (h/add-count sql! (h/find-all sql! (:email schema))))
+    (is (= (:count (meta (h/add-count sql! (h/find-all sql! (:email schema)))))
            4)))
   (testing "find child"
-    (is (= (h/find-child sql! schema :account (:results (h/find-all sql! (:account schema))))
+    (is (= (h/find-child sql! schema :account (h/find-all sql! (:account schema)))
            [[:history [{:account 1, :transaction 1} {:account 3, :transaction 2} {:account 3, :transaction 3}]]])))
   (testing "add children"
-    (is (= (h/add-children sql! schema :user (:results (h/find-all sql! (:user schema))))
+    (is (= (h/add-children sql! schema :user (h/find-all sql! (:user schema)))
            [{:account nil
              :email [{:subject "s1", :user "a", :id 1}
                      {:subject "s2", :user "a", :id 2}
@@ -143,7 +143,7 @@
             {:account [{:user "c", :number 3 :bank "k"}]
              :email [{:subject "s4", :user "c", :id 4}]
              :password "x", :username "c"}]))
-    (is (= (h/add-children sql! schema :user (:results (h/find-all sql! (:user schema))) :only [:account])
+    (is (= (h/add-children sql! schema :user (h/find-all sql! (:user schema)) :only [:account])
            [{:account nil
              :password "z" :username "a"}
             {:account [{:user "b", :number 1 :bank "k"}
@@ -153,7 +153,7 @@
              :password "x" :username "c"}])))
 
   (testing "add all children"
-    (is (= (h/add-all-children sql! schema :user (:results (h/find-all sql! (:user schema))))
+    (is (= (h/add-all-children sql! schema :user (h/find-all sql! (:user schema)))
            [{:account nil
              :email [{:subject "s1", :user "a", :id 1}
                      {:subject "s2", :user "a", :id 2}
@@ -170,11 +170,11 @@
              :email [{:subject "s4", :user "c", :id 4}]
              :password "x", :username "c"}])))
   (testing "find parent"
-    (is (= (h/find-parent sql! schema :history (:results (h/find-all sql! (:history schema))))
+    (is (= (h/find-parent sql! schema :history (h/find-all sql! (:history schema)))
            [[:account [{:user "b", :number 1 :bank "k"}
                        {:user "c", :number 3 :bank "k"}]]])))
   (testing "add parents"
-    (is (= (h/add-parents sql! schema :account (:results (h/find-all sql! (:account schema))))
+    (is (= (h/add-parents sql! schema :account (h/find-all sql! (:account schema)))
            [{:bank [{:id 1, :bank "k"}]
              :user [{:password "y", :username "b"}]
              :number 1}
@@ -185,7 +185,7 @@
              :user [{:password "x", :username "c"}]
              :number 3}])))
   (testing "add all parents"
-    (is (= (h/add-all-parents sql! schema :history (:results (h/find-all sql! (:history schema))))
+    (is (= (h/add-all-parents sql! schema :history (h/find-all sql! (:history schema)))
            [{:account [{:bank [{:id 1, :bank "k"}]
                         :user [{:password "y", :username "b"}]
                         :number 1}]

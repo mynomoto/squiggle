@@ -56,8 +56,8 @@
                      :order order
                      :limit limit
                      :offset offset}]
-    {:command-map command-map
-     :results (sql-fn command-map)}))
+    (with-meta (sql-fn command-map)
+      {:command-map command-map})))
 
 (defn find-like
   [sql-fn {:keys [table order primary-key]} term & {:keys [limit offset column]}]
@@ -67,17 +67,21 @@
                      :order order
                      :limit limit
                      :offset offset}]
-    {:command-map command-map
-     :results (sql-fn command-map)}))
+    (with-meta (sql-fn command-map)
+      {:command-map command-map})))
 
-(defn add-count [sql-fn {:keys [command-map] :as results}]
-  (assoc results
-    :count (second (ffirst (sql-fn
-                            (assoc command-map
-                              :order nil
-                              :limit nil
-                              :offset nil
-                              :column [:count :*]))))))
+(defn add-count [sql-fn results]
+  (let [command-map (:command-map (meta results))]
+    (with-meta results
+      {:count (-> command-map
+                  (assoc
+                    :order nil
+                    :limit nil
+                    :offset nil
+                    :column [:count :*])
+                  sql-fn
+                  ffirst
+                  second)})))
 
 (defn insert [{:keys [column-schema table]} params]
   (let [c (column column-schema)
@@ -128,8 +132,7 @@
           children (map #(group-by foreign-column %) children)
           ordered-children (for [p ids]
                              (map (fn [chi fk] (hash-map fk (get chi p)))
-                                  children (or only child)))
-          _ (println ordered-children)]
+                                  children (or only child)))]
       (map #(apply merge %1 %2) s ordered-children))
     s))
 
