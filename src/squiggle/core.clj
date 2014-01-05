@@ -684,10 +684,10 @@
     (jdbc/query c (sql db cm))
 
     :create-index
-    (map #(jdbc/execute! c %) (sql db cm))
+    (dorun (map #(jdbc/execute! c %) (sql db cm)))
 
     :drop-index
-    (map #(jdbc/execute! c %) (sql db cm))
+    (dorun (map #(jdbc/execute! c %) (sql db cm)))
 
     (cond
       (and (= :insert (:command cm)) (= :not-sure db))

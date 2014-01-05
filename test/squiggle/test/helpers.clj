@@ -121,10 +121,12 @@
             {:user "a" :subject "s2" :id 2}
             {:user "a" :subject "s3" :id 3}
             {:user "c" :subject "s4" :id 4}]))
-    (is (= (h/find-like sql! (:email schema) "%1" :column :subject)
+    (is (= (h/find-all sql! (:email schema)
+                       :search "%1"
+                       :search-column :subject)
            [{:user "a" :subject "s1" :id 1}])))
   (testing "add count"
-    (is (= (:count (meta (h/add-count sql! (h/find-all sql! (:email schema)))))
+    (is (= (:records (meta (h/add-count-records sql! (h/find-all sql! (:email schema)))))
            4)))
   (testing "find child"
     (is (= (h/find-child sql! schema :account (h/find-all sql! (:account schema)))
@@ -175,14 +177,14 @@
                        {:user "c", :number 3 :bank "k"}]]])))
   (testing "add parents"
     (is (= (h/add-parents sql! schema :account (h/find-all sql! (:account schema)))
-           [{:bank [{:id 1, :bank "k"}]
-             :user [{:password "y", :username "b"}]
+           [{:bank {:id 1, :bank "k"}
+             :user {:password "y", :username "b"}
              :number 1}
-            {:bank [{:id 2, :bank "l"}]
-             :user [{:password "y", :username "b"}]
+            {:bank {:id 2, :bank "l"}
+             :user {:password "y", :username "b"}
              :number 2}
-            {:bank [{:id 1, :bank "k"}]
-             :user [{:password "x", :username "c"}]
+            {:bank {:id 1, :bank "k"}
+             :user {:password "x", :username "c"}
              :number 3}])))
   (testing "add all parents"
     (is (= (h/add-all-parents sql! schema :history (h/find-all sql! (:history schema)))
@@ -197,5 +199,4 @@
             {:account [{:bank [{:id 1, :bank "k"}]
                         :user [{:password "x", :username "c"}]
                         :number 3}]
-             :transaction 3}])))
-  )
+             :transaction 3}]))))

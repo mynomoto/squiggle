@@ -28,14 +28,31 @@
     :table table
     :option (:drop-table option)}))
 
-(defn delete [sql-fn {:keys [table primary-key]} id]
+(defn create-index [sql-fn {:keys [table index]}]
+  (sql-fn
+   {:command :create-index
+    :table table
+    :index index}))
+
+(defn drop-index [sql-fn {:keys [table index]}]
+  (sql-fn
+   {:command :drop-index
+    :table table
+    :index index}))
+
+(defn delete [{:keys [table primary-key]} id]
   "Given a sql-fn, a schema and an id, delete the record in the table
    with the primary key equal id. The schema needs at least valid values
    for :table and :primary-key"
-  (sql-fn
-   {:command :delete
-    :table table
-    :where (in-or-= primary-key id)}))
+  {:command :delete
+   :table table
+   :where (in-or-= primary-key id)})
+
+(defn delete! [sql-fn schema id]
+  "Given a sql-fn, a schema and an id, delete the record in the table
+   with the primary key equal id. The schema needs at least valid values
+   for :table and :primary-key"
+  (sql-fn (delete schema id)))
 
 (defn find-ids [sql-fn {:keys [table primary-key order]} id & {:keys [column]}]
   "Given a sql-fn, a schema and an id, returns a seq of results with
@@ -49,39 +66,38 @@
     :where (in-or-= (or column primary-key) id)
     :order order}))
 
-(defn find-all [sql-fn {:keys [table order]} & {:keys [limit offset]}]
-  "Given a sql-fn and a schema returns all the results in the table."
-  (let [command-map {:command :select
+(defn find-all
+  [sql-fn {:keys [table order primary-key parent]}
+   & {:keys [limit offset search search-column parent-map]}]
+  (let [where (when search
+                [:like (or search-column primary-key)
+                       search])
+        where-parent (when-let [[parent-schema parent-id] (first parent-map)]
+                       [:= (parent-schema parent) parent-id])
+        where (if (and where where-parent)
+                [:and where where-parent]
+                (or where where-parent))
+        command-map {:command :select
                      :table table
+                     :where where
                      :order order
                      :limit limit
                      :offset offset}]
-    (with-meta (sql-fn command-map)
-      {:command-map command-map})))
+    (vary-meta (sql-fn command-map)
+      merge {:command-map command-map})))
 
-(defn find-like
-  [sql-fn {:keys [table order primary-key]} term & {:keys [limit offset column]}]
-  (let [command-map {:command :select
-                     :table table
-                     :where [:like (or column primary-key) term]
-                     :order order
-                     :limit limit
-                     :offset offset}]
-    (with-meta (sql-fn command-map)
-      {:command-map command-map})))
-
-(defn add-count [sql-fn results]
+(defn add-count-records [sql-fn results]
   (let [command-map (:command-map (meta results))]
-    (with-meta results
-      {:count (-> command-map
-                  (assoc
-                    :order nil
-                    :limit nil
-                    :offset nil
-                    :column [:count :*])
-                  sql-fn
-                  ffirst
-                  second)})))
+    (vary-meta results
+      merge {:records (-> command-map
+                          (assoc
+                            :order nil
+                            :limit nil
+                            :offset nil
+                            :column [:count :*])
+                          sql-fn
+                          ffirst
+                          second)})))
 
 (defn insert [{:keys [column-schema table]} params]
   (let [c (column column-schema)
@@ -94,14 +110,14 @@
 (defn insert! [sql-fn schema params]
   (sql-fn (insert schema params)))
 
-(defn update [{:keys [column-schema pk table]} id params]
+(defn update [{:keys [column-schema primary-key table]} id params]
   (let [c (column column-schema)
         value (map params c)
         s (partition 2 (interleave c value))
         s (remove #(nil? (second %)) s)]
     {:command :update
      :table table
-     :where [:= pk id]
+     :where [:= primary-key id]
      :set (vec (map (fn [x] [:= (first x) (second x)]) s))}))
 
 (defn update! [sql-fn schema id params]
@@ -155,7 +171,7 @@
   (when (and (seq s) (:parent (schema full-schema)))
     (let [{:keys [primary-key parent]} (schema full-schema)]
       (for [[parent-schema column] parent
-            :let [ids (map column s)]]
+            :let [ids (distinct (map column s))]]
         [parent-schema
          (find-ids sql-fn (full-schema parent-schema) ids)]))))
 
@@ -169,7 +185,7 @@
           keys-fn (apply juxt (keys parent))
           ids (map keys-fn s)
           ordered-parents (for [p ids]
-                             (map (fn [id chi [_ fk]] (hash-map fk (get chi id)))
+                            (map (fn [id chi [_ fk]] (hash-map fk (first (get chi id))))
                                   p parents (or only parent)))
           ]
       (map #(apply merge %1 %2) s ordered-parents))
