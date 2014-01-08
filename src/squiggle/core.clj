@@ -625,7 +625,7 @@
   (for [[column option] index
         :let [[column idx-name] (if (map? column) (first column) [column (str column "_idx")])
               option (set option)]]
-    [(str "CREATE "
+    (str "CREATE "
          (when (:unique option) "UNIQUE ")
          (when (:hash option) "HASH ")
          (when (:spatial option) "SPATIAL ")
@@ -636,7 +636,7 @@
          (table-string db table)
          " ("
          (column-string db column)
-         ")")]))
+         ")")))
 
 (defn- sql-drop-index
   "Given a database and a drop-index command map returns a drop
@@ -645,9 +645,9 @@
   (for [[column option] index
         :let [[column idx-name] (if (map? column) (first column) [column (str column "_idx")])
               option (set option)]]
-    [(str "DROP  INDEX "
+    (str "DROP  INDEX "
          (when (:if-exists option) "IF EXISTS ")
-         (identifier->str db idx-name))]))
+         (identifier->str db idx-name))))
 
 (defn sql
   "Given a database and a command map return the sql vector."
@@ -684,10 +684,10 @@
     (jdbc/query c (sql db cm))
 
     :create-index
-    (dorun (map #(jdbc/execute! c %) (sql db cm)))
+    (doall (map #(jdbc/db-do-commands c %) (sql db cm)))
 
     :drop-index
-    (dorun (map #(jdbc/execute! c %) (sql db cm)))
+    (doall (map #(jdbc/db-do-commands c %) (sql db cm)))
 
     :drop-table
     (jdbc/db-do-commands c (sql db cm))
