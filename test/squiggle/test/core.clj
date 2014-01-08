@@ -186,16 +186,16 @@
 
 (deftest test-create-table
   (testing "default"
-    (is (= ["CREATE TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
+    (is (= "CREATE TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"
            (sql ct))))
   (testing "without :if-not-exists"
-    (is (= ["CREATE TABLE \"user\" (\"id\" identity PRIMARY KEY)"]
+    (is (= "CREATE TABLE \"user\" (\"id\" identity PRIMARY KEY)"
            (sql (assoc ct :option [])))))
   (testing "with :temp"
-    (is (= ["CREATE TEMP TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
+    (is (= "CREATE TEMP TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"
            (sql (assoc ct :option [:temp :if-not-exists])))))
   (testing "with :temporary"
-    (is (= ["CREATE TEMPORARY TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"]
+    (is (= "CREATE TEMPORARY TABLE IF NOT EXISTS \"user\" (\"id\" identity PRIMARY KEY)"
            (sql (assoc ct :option [:temporary :if-not-exists]))))))
 
 (def dt
@@ -205,16 +205,16 @@
 
 (deftest test-drop-table
   (testing "default"
-    (is (= ["DROP TABLE IF EXISTS \"user\""]
+    (is (= "DROP TABLE IF EXISTS \"user\""
            (sql dt))))
   (testing "without :if-exists"
-    (is (= ["DROP TABLE \"user\""]
+    (is (= "DROP TABLE \"user\""
            (sql (assoc dt :option [])))))
   (testing "with :cascade"
-    (is (= ["DROP TABLE IF EXISTS \"user\" CASCADE"]
+    (is (= "DROP TABLE IF EXISTS \"user\" CASCADE"
            (sql (assoc dt :option [:cascade :if-exists])))))
   (testing "with :restrict"
-    (is (= ["DROP TABLE IF EXISTS \"user\" RESTRICT"]
+    (is (= "DROP TABLE IF EXISTS \"user\" RESTRICT"
            (sql (assoc dt :option [:restrict :if-exists])))))
   (testing "with :restrict and :cascade"
     (is (thrown? IllegalArgumentException

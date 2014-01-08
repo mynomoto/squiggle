@@ -70,14 +70,14 @@
              (:restrict option))
       (throw (IllegalArgumentException.
               "Can't use both :cascade and :restrict at the same time."))
-      [(str "DROP TABLE "
-            (if (:if-exists option)
-              "IF EXISTS ")
-            (table-string db table)
-            (if (:cascade option)
-              " CASCADE")
-            (if (:restrict option)
-              " RESTRICT"))])))
+      (str "DROP TABLE "
+           (if (:if-exists option)
+             "IF EXISTS ")
+           (table-string db table)
+           (if (:cascade option)
+             " CASCADE")
+           (if (:restrict option)
+             " RESTRICT")))))
 
 (def ^{:private true
        :doc "Map of options for create-table used to convert keywords to
@@ -138,12 +138,12 @@
   "Given a db and a command map generates a create table sql code."
   [db {:keys [table column-schema option]}]
   (let [option (option->set option)]
-    [(str "CREATE "
-          (pre-table-options db option)
-          "TABLE "
-          (post-table-options db option)
-          (table-string db table)
-          " (" (ct-columns db column-schema) ")")]))
+    (str "CREATE "
+         (pre-table-options db option)
+         "TABLE "
+         (post-table-options db option)
+         (table-string db table)
+         " (" (ct-columns db column-schema) ")")))
 
 (defn- sql-insert
   "Given a db and a command map return the insert sql code."
@@ -688,6 +688,12 @@
 
     :drop-index
     (dorun (map #(jdbc/execute! c %) (sql db cm)))
+
+    :drop-table
+    (jdbc/db-do-commands c (sql db cm))
+
+    :create-table
+    (jdbc/db-do-commands c (sql db cm))
 
     (cond
       (and (= :insert (:command cm)) (= :not-sure db))
