@@ -59,7 +59,8 @@
      [:subject :varchar]]
     :order [:subject]
     :parent {:user :user}
-    :primary-key :id}})
+    :primary-key :id
+    :index [[{:user :user_index} [:if-not-exists :if-exists]]]}})
 
 (def full-schema
   {:schema schema
@@ -80,9 +81,20 @@
 (def iden (keyword "scope_identity()"))
 
 (deftest basic-operations
-  (testing "create-tables"
-    (is (= [[0] [0] [0] [0] [0]] (map #(h/create-table full-schema %) (keys schema))))
+  (testing "create-all-tables"
+    (is (= [[0] [0] [0] [0] [0]]
+           (h/create-all-tables full-schema)))
     (is (empty? (h/find-all full-schema :user))))
+  (testing "index"
+    (is (= [[0]]
+           (h/create-index full-schema :email)))
+    (is (nil? (h/create-index full-schema :user))))
+  (testing "drop-table"
+    (is (= [0]
+           (h/drop-table full-schema :history)))
+    (is (thrown? org.h2.jdbc.JdbcSQLException (h/find-all full-schema :history)))
+    (is (= [0]
+           (h/create-table full-schema :history))))
   (testing "insert users"
     (is (= [[nil] [nil] [nil]]
            (map #(h/put! full-schema :user nil %)

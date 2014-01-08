@@ -17,8 +17,8 @@
     [:= column id]))
 
 (defn create-table [{:keys [db db-spec schema]} table]
-  "Given a sql-fn and a schema, creates the table described in the schema.
-   The schema needs at least valid values for :table and :column-schema."
+  "Given a full-schema and a table, creates the table described in the
+  full-schema. The schema needs at least valid values for :column-schema."
   (let [{:keys [option column-schema]} (table schema)]
     (sq/sql! db db-spec
              {:command :create-table
@@ -26,8 +26,11 @@
               :column-schema column-schema
               :option (:create-table option)})))
 
+(defn create-all-tables [{:keys [schema] :as full-schema}]
+  (map #(create-table full-schema %) (keys schema)))
+
 (defn drop-table [{:keys [db db-spec schema]} table]
-  "Given a sql-fn and a schema, drops the table in the schema
+  "Given a full-schema and a table, drops the table in the schema
   The schema needs at least a valid :table value."
   (let [{:keys [option]} (table schema)]
     (sq/sql! db db-spec
@@ -35,20 +38,31 @@
               :table table
               :option (:drop-table option)})))
 
-(defn create-index [sql-fn {:keys [table index]}]
-  (sql-fn
-   {:command :create-index
-    :table table
-    :index index}))
+(defn drop-all-tables [{:keys [schema] :as full-schema}]
+  (map #(drop-table full-schema %) (keys schema)))
 
-(defn drop-index [sql-fn {:keys [table index]}]
-  (sql-fn
-   {:command :drop-index
-    :table table
-    :index index}))
+(defn create-index [{:keys [db db-spec schema]} table]
+  (when-let [index (:index (table schema))]
+    (sq/sql! db db-spec
+             {:command :create-index
+              :table table
+              :index index})))
+
+(defn create-all-indexes [{:keys [schema] :as full-schema}]
+  (map #(create-index full-schema %) (keys schema)))
+
+(defn drop-index [{:keys [db db-spec schema]} table]
+  (when-let [index (:index (table schema))]
+    (sq/sql! db db-spec
+     {:command :drop-index
+      :table table
+      :index index})))
+
+(defn drop-all-indexes [{:keys [schema] :as full-schema}]
+  (map #(drop-index full-schema %) (keys schema)))
 
 (defn delete! [{:keys [db-spec schema]} table id]
-  "Given a sql-fn, a schema and an id, delete the record in the table
+  "Given a full-schema, a table and an id, delete the record in the table
    with the primary key equal id. The schema needs at least valid values
    for :table and :primary-key"
   (let [column (primary-key schema table)]
@@ -57,7 +71,7 @@
                :entities (j/quoted \") )))
 
 (defn find-ids [{:keys [db-spec schema db]} table id & {:keys [column]}]
-  "Given a sql-fn, a schema and an id, returns a seq of results with
+  "Given a full-schema, a table and an id, returns a seq of results with
    primary keys equal the id. id may be a coll of ids or a single id.
    It accepts and optional column argument in the form
    \":column :name-of-column\". In this case, returns the results where
