@@ -1,8 +1,13 @@
-(ns squiggle.helpers)
+(ns squiggle.helpers
+  (:require [clojure.java.jdbc :as j]
+            [squiggle.core :as sq]))
 
-(defn column [column-schema]
+(defn schema-columns [column-schema]
   "Given a column-schema, returns a list of columns in the schema."
   (map first column-schema))
+
+(defn primary-key [schema table]
+  (->> schema table :primary-key name (j/quoted \")))
 
 (defn in-or-= [column id]
   "Given a column name and an id or a coll of ids returns an equal
@@ -11,22 +16,24 @@
     [:in column (vec id)]
     [:= column id]))
 
-(defn create-table [sql-fn {:keys [table option column-schema]}]
+(defn create-table [{:keys [db db-spec schema]} table]
   "Given a sql-fn and a schema, creates the table described in the schema.
    The schema needs at least valid values for :table and :column-schema."
-  (sql-fn
-   {:command :create-table
-    :table table
-    :column-schema column-schema
-    :option (:create-table option)}))
+  (let [{:keys [option column-schema]} (table schema)]
+    (sq/sql! db db-spec
+             {:command :create-table
+              :table table
+              :column-schema column-schema
+              :option (:create-table option)})))
 
-(defn drop-table [sql-fn {:keys [table option]}]
+(defn drop-table [{:keys [db db-spec schema]} table]
   "Given a sql-fn and a schema, drops the table in the schema
   The schema needs at least a valid :table value."
-  (sql-fn
-   {:command :drop-table
-    :table table
-    :option (:drop-table option)}))
+  (let [{:keys [option]} (table schema)]
+    (sq/sql! db db-spec
+             {:command :drop-table
+              :table table
+              :option (:drop-table option)})))
 
 (defn create-index [sql-fn {:keys [table index]}]
   (sql-fn
@@ -40,36 +47,33 @@
     :table table
     :index index}))
 
-(defn delete [{:keys [table primary-key]} id]
+(defn delete! [{:keys [db-spec schema]} table id]
   "Given a sql-fn, a schema and an id, delete the record in the table
    with the primary key equal id. The schema needs at least valid values
    for :table and :primary-key"
-  {:command :delete
-   :table table
-   :where (in-or-= primary-key id)})
+  (let [column (primary-key schema table)]
+    (j/delete! db-spec table
+               [(str column " = ?") id]
+               :entities (j/quoted \") )))
 
-(defn delete! [sql-fn schema id]
-  "Given a sql-fn, a schema and an id, delete the record in the table
-   with the primary key equal id. The schema needs at least valid values
-   for :table and :primary-key"
-  (sql-fn (delete schema id)))
-
-(defn find-ids [sql-fn {:keys [table primary-key order]} id & {:keys [column]}]
+(defn find-ids [{:keys [db-spec schema db]} table id & {:keys [column]}]
   "Given a sql-fn, a schema and an id, returns a seq of results with
    primary keys equal the id. id may be a coll of ids or a single id.
    It accepts and optional column argument in the form
    \":column :name-of-column\". In this case, returns the results where
    the column is equal the id."
-  (sql-fn
-   {:command :select
-    :table table
-    :where (in-or-= (or column primary-key) id)
-    :order order}))
+  (let [{:keys [primary-key order]} (table schema)]
+    (sq/sql! db db-spec
+             {:command :select
+              :table table
+              :where (in-or-= (or column primary-key) id)
+              :order order})))
 
 (defn find-all
-  [sql-fn {:keys [table order primary-key parent]}
+  [{:keys [db-spec schema db]} table
    & {:keys [limit offset search search-column parent-map]}]
-  (let [where (when search
+  (let [{:keys [order primary-key parent]} (table schema)
+        where (when search
                 [:like (or search-column primary-key)
                        search])
         where-parent (when-let [[parent-schema parent-id] (first parent-map)]
@@ -83,10 +87,10 @@
                      :order order
                      :limit limit
                      :offset offset}]
-    (vary-meta (sql-fn command-map)
+    (vary-meta (sq/sql! db db-spec command-map)
       merge {:command-map command-map})))
 
-(defn add-count-records [sql-fn results]
+(defn add-count-records [{:keys [db-spec schema db]} results]
   (let [command-map (:command-map (meta results))]
     (vary-meta results
       merge {:records (-> command-map
@@ -95,56 +99,42 @@
                             :limit nil
                             :offset nil
                             :column [:count :*])
-                          sql-fn
+                          (#(sq/sql! db db-spec %))
                           ffirst
                           second)})))
 
-(defn insert [{:keys [column-schema table]} params]
-  (let [c (column column-schema)
-        value (map params c)]
-    {:command :insert
-     :table table
-     :column c
-     :value [value]}))
+(defn insert! [{:keys [db-spec schema]} table params]
+  (j/insert! db-spec table params :entities (j/quoted \")))
 
-(defn insert! [sql-fn schema params]
-  (sql-fn (insert schema params)))
+(defn update! [{:keys [db-spec schema]} table id params]
+ (let [column (primary-key schema table)]
+    (j/update! db-spec table
+           params
+           [(str column " = ?") id]
+           :entities (j/quoted \"))))
 
-(defn update [{:keys [column-schema primary-key table]} id params]
-  (let [c (column column-schema)
-        value (map params c)
-        s (partition 2 (interleave c value))
-        s (remove #(nil? (second %)) s)]
-    {:command :update
-     :table table
-     :where [:= primary-key id]
-     :set (vec (map (fn [x] [:= (first x) (second x)]) s))}))
-
-(defn update! [sql-fn schema id params]
-  (sql-fn (update schema id params)))
-
-(defn put! [sql-fn schema id params]
+(defn put! [full-schema table id params]
   (if id
-    (update! sql-fn schema id params)
-    (insert! sql-fn schema params)))
+    (update! full-schema table id params)
+    (insert! full-schema table params)))
 
 (defn find-child
   "Returns a seq of vectors. Each vector has the form [:schema seq]."
-  [sql-fn full-schema schema s & {:keys [only]}]
-  (when (and (seq s) (:child (schema full-schema)))
-    (let [{:keys [primary-key foreign-column child]} (schema full-schema)
+  [{:keys [schema] :as full-schema} table s & {:keys [only]}]
+  (when (and (seq s) (:child (table schema)))
+    (let [{:keys [primary-key foreign-column child]} (table schema)
           ids (map primary-key s)]
       (for [c (or only child)]
-        [c (find-ids sql-fn (full-schema c) ids :column foreign-column)]))))
+        [c (find-ids full-schema c ids :column foreign-column)]))))
 
-(defn add-children [sql-fn full-schema schema s & {:keys [only]}]
-  (if (and (seq s) (:child (schema full-schema)))
-    (let [{:keys [primary-key foreign-column child]} (schema full-schema)
+(defn add-children [{:keys [schema] :as full-schema} table s & {:keys [only]}]
+  (if (and (seq s) (:child (table schema)))
+    (let [{:keys [primary-key foreign-column child]} (table schema)
           ids (map primary-key s)
           children (if only
-                     (find-child sql-fn full-schema schema s :only only)
-                     (find-child sql-fn full-schema schema s))
-          children (map (fn [[sch chi]] chi) children)
+                     (find-child full-schema table s :only only)
+                     (find-child full-schema table s))
+          children (map (fn [[tbl chi]] chi) children)
           children (map #(group-by foreign-column %) children)
           ordered-children (for [p ids]
                              (map (fn [chi fk] (hash-map fk (get chi p)))
@@ -152,13 +142,13 @@
       (map #(apply merge %1 %2) s ordered-children))
     s))
 
-(defn add-all-children [sql-fn full-schema schema s]
-  (if (and (seq s) (:child (schema full-schema)))
-    (let [{:keys [primary-key foreign-column child]} (schema full-schema)
+(defn add-all-children [{:keys [schema] :as full-schema} table s]
+  (if (and (seq s) (:child (table schema)))
+    (let [{:keys [primary-key foreign-column child]} (table schema)
           ids (map primary-key s)
-          children (find-child sql-fn full-schema schema s)
-          children (map (fn [[sch chi]]
-                          (add-all-children sql-fn full-schema sch chi))
+          children (find-child full-schema table s)
+          children (map (fn [[tbl chi]]
+                          (add-all-children full-schema tbl chi))
                         children)
           children (map #(group-by foreign-column %) children)
           ordered-children (for [p ids]
@@ -167,43 +157,41 @@
       (map #(apply merge %1 %2) s ordered-children))
     s))
 
-(defn find-parent [sql-fn full-schema schema s]
-  (when (and (seq s) (:parent (schema full-schema)))
-    (let [{:keys [primary-key parent]} (schema full-schema)]
+(defn find-parent [{:keys [schema] :as full-schema} table s]
+  (when (and (seq s) (:parent (table schema)))
+    (let [{:keys [primary-key parent]} (table schema)]
       (for [[parent-schema column] parent
             :let [ids (distinct (map column s))]]
         [parent-schema
-         (find-ids sql-fn (full-schema parent-schema) ids)]))))
+         (find-ids full-schema parent-schema ids)]))))
 
-(defn add-parents [sql-fn full-schema schema s & {:keys [only]}]
-  (if (and (seq s) (:parent (schema full-schema)))
-    (let [{:keys [primary-key parent]} (schema full-schema)
+(defn add-parents [{:keys [schema] :as full-schema} table s & {:keys [only]}]
+  (if (and (seq s) (:parent (table schema)))
+    (let [{:keys [primary-key parent]} (table schema)
           parents (if only
-                     (find-parent sql-fn full-schema schema s :only only)
-                     (find-parent sql-fn full-schema schema s))
-          parents (map (fn [[sch chi]] (group-by (:primary-key (sch full-schema)) chi)) parents)
+                     (find-parent full-schema table s :only only)
+                     (find-parent full-schema table s))
+          parents (map (fn [[tbl chi]] (group-by (:primary-key (tbl schema)) chi)) parents)
           keys-fn (apply juxt (keys parent))
           ids (map keys-fn s)
           ordered-parents (for [p ids]
                             (map (fn [id chi [_ fk]] (hash-map fk (first (get chi id))))
-                                  p parents (or only parent)))
-          ]
+                                  p parents (or only parent)))]
       (map #(apply merge %1 %2) s ordered-parents))
     s))
 
-(defn add-all-parents [sql-fn full-schema schema s]
-  (if (and (seq s) (:parent (schema full-schema)))
-    (let [{:keys [primary-key parent]} (schema full-schema)
-          parents (find-parent sql-fn full-schema schema s)
-          parents (map (fn [[sch par]]
-                         [sch (add-all-parents sql-fn full-schema sch par)])
+(defn add-all-parents [{:keys [schema] :as full-schema} table s]
+  (if (and (seq s) (:parent (table schema)))
+    (let [{:keys [primary-key parent]} (table schema)
+          parents (find-parent full-schema table s)
+          parents (map (fn [[tbl par]]
+                         [tbl (add-all-parents full-schema tbl par)])
                         parents)
-          parents (map (fn [[sch par]] (group-by (:primary-key (sch full-schema)) par)) parents)
+          parents (map (fn [[tbl par]] (group-by (:primary-key (tbl schema)) par)) parents)
           keys-fn (apply juxt (keys parent))
           ids (map keys-fn s)
           ordered-parents (for [p ids]
                              (map (fn [id par [_ fk]] (hash-map fk (get par id)))
-                                  p parents parent))
-          ]
+                                  p parents parent))]
       (map #(apply merge %1 %2) s ordered-parents))
     s))
