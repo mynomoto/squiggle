@@ -27,7 +27,7 @@
               :option (:create-table option)})))
 
 (defn create-all-tables [{:keys [schema] :as full-schema}]
-  (map #(create-table full-schema %) (keys schema)))
+  (doall (map #(create-table full-schema %) (keys schema))))
 
 (defn drop-table [{:keys [db db-spec schema]} table]
   "Given a full-schema and a table, drops the table in the schema
@@ -39,7 +39,7 @@
               :option (:drop-table option)})))
 
 (defn drop-all-tables [{:keys [schema] :as full-schema}]
-  (map #(drop-table full-schema %) (keys schema)))
+  (doall (map #(drop-table full-schema %) (keys schema))))
 
 (defn create-index [{:keys [db db-spec schema]} table]
   (when-let [index (:index (table schema))]
@@ -49,7 +49,7 @@
               :index index})))
 
 (defn create-all-indexes [{:keys [schema] :as full-schema}]
-  (map #(create-index full-schema %) (keys schema)))
+  (doall (map #(create-index full-schema %) (keys schema))))
 
 (defn drop-index [{:keys [db db-spec schema]} table]
   (when-let [index (:index (table schema))]
@@ -59,7 +59,7 @@
       :index index})))
 
 (defn drop-all-indexes [{:keys [schema] :as full-schema}]
-  (map #(drop-index full-schema %) (keys schema)))
+  (doall (map #(drop-index full-schema %) (keys schema))))
 
 (defn delete! [{:keys [db-spec schema]} table id]
   "Given a full-schema, a table and an id, delete the record in the table
