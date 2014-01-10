@@ -204,17 +204,17 @@
              :number 3}])))
   (testing "add all parents"
     (is (= (h/add-all-parents full-schema :history (h/find-all full-schema :history))
-           [{:account [{:bank [{:id 1, :bank "k"}]
-                        :user [{:password "y", :username "b"}]
-                        :number 1}]
+           [{:account {:bank {:id 1, :bank "k"}
+                       :user {:password "y", :username "b"}
+                       :number 1}
              :transaction 1}
-            {:account [{:bank [{:id 1, :bank "k"}]
-                        :user [{:password "x", :username "c"}]
-                        :number 3}]
+            {:account {:bank {:id 1, :bank "k"}
+                        :user {:password "x", :username "c"}
+                        :number 3}
              :transaction 2}
-            {:account [{:bank [{:id 1, :bank "k"}]
-                        :user [{:password "x", :username "c"}]
-                        :number 3}]
+            {:account {:bank {:id 1, :bank "k"}
+                        :user {:password "x", :username "c"}
+                        :number 3}
              :transaction 3}])))
   (testing "delete"
     (is (= (h/delete! full-schema :user "c")

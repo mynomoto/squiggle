@@ -205,7 +205,7 @@
           keys-fn (apply juxt (keys parent))
           ids (map keys-fn s)
           ordered-parents (for [p ids]
-                             (map (fn [id par [_ fk]] (hash-map fk (get par id)))
+                            (map (fn [id par [_ fk]] (hash-map fk (first (get par id))))
                                   p parents parent))]
       (map #(apply merge %1 %2) s ordered-parents))
     s))
