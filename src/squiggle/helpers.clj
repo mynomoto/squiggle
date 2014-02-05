@@ -85,7 +85,7 @@
 
 (defn find-all
   [{:keys [db-spec schema db]} table
-   & {:keys [limit offset search search-column parent-map]}]
+   & {:keys [limit offset search search-column parent-map column]}]
   (let [{:keys [order primary-key parent]} (table schema)
         where (when search
                 [:like (or search-column primary-key)
@@ -100,7 +100,8 @@
                      :where where
                      :order order
                      :limit limit
-                     :offset offset}]
+                     :offset offset
+                     :column column}]
     (vary-meta (sq/sql! db db-spec command-map)
       merge {:command-map command-map})))
 
