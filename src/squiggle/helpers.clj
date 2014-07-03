@@ -210,3 +210,20 @@
                                   p parents parent))]
       (map #(apply merge %1 %2) s ordered-parents))
     s))
+
+(defn where! [m clause]
+  (assoc m :where clause))
+
+(defn where-and [m clause]
+  (if-let [w (:where m)]
+    (if (= :and (first w))
+      (update-in m [:where] conj clause)
+      (assoc m :where [:and w clause]))
+    (assoc m :where clause)))
+
+(defn where-or [m clause]
+  (if-let [w (:where m)]
+    (if (= :or (first w))
+      (update-in m [:where] conj clause)
+      (assoc m :where [:or w clause]))
+    (assoc m :where clause)))
