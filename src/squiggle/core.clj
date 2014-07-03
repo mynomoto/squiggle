@@ -200,7 +200,7 @@
    :between  "BETWEEN"
    :not      "NOT"
    :is-null  "IS NULL"
-   :not-null "NULL"
+   :not-null "IS NOT NULL"
    :and      "AND"
    :or       "OR"})
 
@@ -221,8 +221,13 @@
        :doc "Set of infix operators used verify if a keyword is a infix
        operator."}
   infix-operators
-  #{:> :< := :>= :<= :!= :<> :like :not= :in :not-in :between :is-null
-    :not-null})
+  #{:> :< := :>= :<= :!= :<> :like :not= :in :not-in :between})
+
+(def ^{:private true
+       :doc "Set of prefix operators used verify if a keyword is a infix
+       operator."}
+  prefix-operators
+  #{:is-null :not-null})
 
 #_(defn- table-alias
   "Given a table return a map of table as key and alias as val.
@@ -253,8 +258,9 @@
     (let [[o & r] f]
        (if (operators->str o)
          (cond
-          (infix-operators o) (let [[le re] r]
-                         (list (process-operators le) o (process-operators re)))
+           (infix-operators o) (let [[le re] r]
+                                 (list (process-operators le) o (process-operators re)))
+           (prefix-operators o) (list (process-operators (first r)) o)
           (= :and o) (if (= 1 (count r))
                          (process-operators (first r))
                          (interpose o (map process-operators r)))
@@ -397,7 +403,7 @@
                      fix-in-vector
                      (add-columns db)
                      parentesis
-                     flatten
+                     (#(if (coll? %) (flatten %) [%]))
                      add-space)]
     (cond
      (nil? exp) nil
@@ -708,10 +714,10 @@
 (defn sql-transaction! [db c maps]
   (jdbc/with-db-transaction [t c]
     (doseq [m maps]
-      (sql! db c m))))
+      (sql! db t m))))
 
 (defn sql-transaction [db c maps]
   (jdbc/with-db-transaction [t c]
     (doseq [m maps]
-      (sql! db c m))
+      (sql! db t m))
     (jdbc/db-set-rollback-only! t)))
