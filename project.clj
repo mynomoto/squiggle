@@ -3,7 +3,7 @@
   :url "https://github.com/mynomoto/squiggle"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[org.clojure/clojure "1.5.1"]
-                 [org.clojure/java.jdbc "0.3.3"]]
+  :dependencies [[org.clojure/clojure "1.6.0"]
+                 [org.clojure/java.jdbc "0.3.4"]]
   :test-refresh  {:notify-command  ["lein-test"]}
-  :profiles {:dev {:dependencies [[com.h2database/h2 "1.3.174"]]}})
+  :profiles {:dev {:dependencies [[com.h2database/h2 "1.4.179"]]}})
