@@ -330,6 +330,23 @@
                                        [:or [:< :id 1000]
                                             [:> :id 0]]])))))
 
+  (testing "with another complex where clause"
+    (is (= [(str "SELECT * FROM \"user\" "
+                 "WHERE \"username\" IN (?, ?, ?) OR "
+                 "\"roles\" LIKE ? OR \"id\" < ? AND \"id\" > ?")
+            "user" "u" "admin" "%us%" 1000 0]
+           (sql (assoc sl :where [:or [:in :username ["user" "u" "admin"]]
+                                       [:like :roles "%us%"]
+                                       [:and [:< :id 1000]
+                                            [:> :id 0]]])))))
+
+  (testing "with yet another complex where clause"
+    (is (= [(str "SELECT * FROM \"user\" "
+                 "WHERE \"roles\" LIKE ? OR \"id\" < ?")
+            "%us%" 1000]
+           (sql (assoc sl :where [:or [:like :roles "%us%"]
+                                      [:< :id 1000]])))))
+
   (testing "with a group by clause and an aggregator"
     (is (= ["SELECT COUNT(*) AS \"count\" FROM \"user\" GROUP BY \"roles\""]
            (sql (assoc sl :column [{[:count :*] :count}]

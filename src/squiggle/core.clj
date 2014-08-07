@@ -402,8 +402,8 @@
                      add-operators
                      fix-in-vector
                      (add-columns db)
-                     parentesis
-                     (#(if (coll? %) (flatten %) [%]))
+                     (map parentesis)
+                     flatten
                      add-space)]
     (cond
      (nil? exp) nil
